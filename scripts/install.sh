@@ -8,9 +8,10 @@ cd "$(dirname "$0")/.."
 BIN_DIR=${BIN_DIR:-$HOME/.local/bin}
 APP_DIR=${APP_DIR:-/Applications}
 user_path=$PATH
+[ -d /home/linuxbrew/.linuxbrew/bin ] && export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"
 export PATH="$PATH:$(go env GOPATH)/bin"
 
-for c in go git npm claude; do
+for c in go git npm; do
 	command -v "$c" >/dev/null || { echo "missing: $c" >&2; exit 1; }
 done
 command -v gh >/dev/null || echo "warning: gh not found; PR tracking will not work" >&2
@@ -23,8 +24,27 @@ GOBIN="$BIN_DIR" go install ./cmd/conveyor
 echo "==> App"
 wails build -clean
 git checkout -- frontend/dist/.gitkeep 2>/dev/null || true
-rm -rf "$APP_DIR/Conveyor.app"
-cp -R build/bin/Conveyor.app "$APP_DIR/"
+if [ "$(uname)" = "Darwin" ]; then
+	rm -rf "$APP_DIR/Conveyor.app"
+	cp -R build/bin/Conveyor.app "$APP_DIR/"
+	echo "installed: $APP_DIR/Conveyor.app"
+else
+	mkdir -p "$BIN_DIR"
+	cp build/bin/Conveyor "$BIN_DIR/Conveyor"
+	chmod +x "$BIN_DIR/Conveyor"
+	mkdir -p "$HOME/.local/share/applications"
+	cat << EOF > "$HOME/.local/share/applications/conveyor.desktop"
+[Desktop Entry]
+Name=Conveyor
+Comment=Local kanban that orchestrates agentic tasks
+Exec=$BIN_DIR/Conveyor
+Icon=$PWD/build/appicon.png
+Terminal=false
+Type=Application
+Categories=Development;
+EOF
+	echo "installed: $BIN_DIR/Conveyor"
+fi
 
 echo "==> Skills"
 # Conveyor's user-level skills; overwritten on every install, so edit them in this repo.
@@ -48,7 +68,7 @@ else
 fi
 
 echo "installed: $BIN_DIR/conveyor"
-echo "installed: $APP_DIR/Conveyor.app"
+[ "$(uname)" = "Darwin" ] && echo "installed: $APP_DIR/Conveyor.app"
 case ":$user_path:" in
 *":$BIN_DIR:"*) ;;
 *) echo "note: add $BIN_DIR to your PATH; the app and hooks find conveyor through it" ;;
