@@ -18,6 +18,8 @@ import (
 	"github.com/JayaSuryaOolio/conveyor/internal/claude"
 	"github.com/JayaSuryaOolio/conveyor/internal/core"
 	"github.com/JayaSuryaOolio/conveyor/internal/gh"
+	"github.com/JayaSuryaOolio/conveyor/internal/hook"
+	"github.com/JayaSuryaOolio/conveyor/internal/runner"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 	"github.com/JayaSuryaOolio/conveyor/internal/workspace"
 )
@@ -148,6 +150,8 @@ func (d *Dispatcher) reap(ctx context.Context) error {
 	if len(cand) == 0 {
 		return nil
 	}
+
+	// Collect the list of live claude agents (for claude-backed runs and interactive sessions).
 	alive, sessions := map[string]claude.Agent{}, map[string]bool{}
 	if needAgents {
 		agents, err := claude.Agents(ctx)
@@ -159,6 +163,7 @@ func (d *Dispatcher) reap(ctx context.Context) error {
 			sessions[a.SessionID] = true
 		}
 	}
+
 	for _, r := range cand {
 		if r.Kind == "interactive" {
 			if err := d.reapInteractive(r, sessions[*r.SessionID]); err != nil {
@@ -166,6 +171,20 @@ func (d *Dispatcher) reap(ctx context.Context) error {
 			}
 			continue
 		}
+
+		// Determine which backend this run uses.
+		task, taskErr := store.GetTask(d.DB, r.TaskID)
+		bgRunner := d.runnerForTask(task)
+
+		if bgRunner.Name() == "agy" {
+			// agy: bg-id is a PID string; check liveness directly.
+			if err := d.reapAgy(ctx, r, task, taskErr); err != nil {
+				return err
+			}
+			continue
+		}
+
+		// claude: use the agents list as before.
 		a, ok := alive[deref(r.BgID)]
 		ok = ok && r.BgID != nil
 		// Adopt sessions whose hooks never fired: the agents list knows the session id.
@@ -191,9 +210,8 @@ func (d *Dispatcher) reap(ctx context.Context) error {
 		if err := store.UpdateRun(d.DB, r); err != nil {
 			return err
 		}
-		task, err := store.GetTask(d.DB, r.TaskID)
-		if err != nil {
-			return err
+		if taskErr != nil {
+			continue
 		}
 		if task.Status != store.StatusRunning {
 			continue
@@ -206,6 +224,74 @@ func (d *Dispatcher) reap(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// reapAgy handles reaping for agy-backed runs (PID-based liveness check).
+func (d *Dispatcher) reapAgy(ctx context.Context, r store.Run, task store.Task, taskErr error) error {
+	if r.BgID == nil {
+		if r.Status == "launching" {
+			if d.now().Sub(parseTime(r.StartedAt)) <= reapGrace {
+				return nil
+			}
+			ended := d.now().UTC().Format(time.RFC3339)
+			r.Status, r.Error, r.EndedAt = "failed", ptr("launch interrupted"), &ended
+			if err := store.UpdateRun(d.DB, r); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	// If the PID is still alive (or within the grace period), leave it.
+	if runner.IsPIDRunning(*r.BgID) {
+		// Still running: if the run was "launching", promote to "running".
+		if r.Status == "launching" {
+			r.Status = "running"
+			return store.UpdateRun(d.DB, r)
+		}
+		return nil
+	}
+	// PID is gone: if within grace, wait longer; else the run finished.
+	if d.now().Sub(parseTime(r.StartedAt)) <= reapGrace {
+		return nil
+	}
+	// The process exited. If already transitioned (e.g. by a Stop hook), nothing to do.
+	if r.Status != "launching" && r.Status != "running" {
+		return nil
+	}
+	if taskErr != nil {
+		ended := d.now().UTC().Format(time.RFC3339)
+		r.Status, r.EndedAt = "finished", &ended
+		return store.UpdateRun(d.DB, r)
+	}
+
+	// Read the session log if present to extract the assistant response / <conveyor> status block.
+	logPath := runner.BgLogPath(d.Home, task.Key)
+	var logOutput string
+	if b, err := os.ReadFile(logPath); err == nil {
+		logOutput = string(b)
+	}
+
+	// If there is log output, run ProcessStop which extracts the <conveyor> block and handles transitions.
+	if logOutput != "" {
+		if err := hook.ProcessStop(d.DB, task, r, logOutput, ""); err == nil {
+			return nil
+		}
+	}
+
+	ended := d.now().UTC().Format(time.RFC3339)
+	r.Status, r.EndedAt = "finished", &ended
+	if err := store.UpdateRun(d.DB, r); err != nil {
+		return err
+	}
+	if task.Status != store.StatusRunning {
+		return nil
+	}
+	note := "The agy session exited without a status block."
+	if _, err := store.AddComment(d.DB, store.Comment{TaskID: task.ID, Author: store.AuthorSystem, Body: note}); err != nil {
+		return err
+	}
+	_, err := store.UpdateTaskStatus(d.DB, task.ID, store.StatusNeedsYou, store.ActorSystem)
+	return err
 }
 
 // reapInteractive finishes a manual session's run once its session is gone (terminal closed, process
@@ -316,7 +402,8 @@ func (d *Dispatcher) start(ctx context.Context, task store.Task, delta []store.C
 	if err != nil {
 		return store.Run{}, err
 	}
-	settings, err := claude.WriteSettings(d.Home, d.ConveyorBin)
+	bgRunner := d.runnerForTask(task)
+	settings, err := bgRunner.WriteSettings(d.Home, d.ConveyorBin)
 	if err != nil {
 		return store.Run{}, err
 	}
@@ -352,9 +439,9 @@ func (d *Dispatcher) start(ctx context.Context, task store.Task, delta []store.C
 	}
 	var bg string
 	if prev != nil {
-		bg, err = claude.Resume(ctx, cwd, *prev.BgID, *prev.SessionID, run.Prompt)
+		bg, err = bgRunner.Resume(ctx, cwd, deref(prev.BgID), deref(prev.SessionID), run.Prompt)
 	} else {
-		bg, err = claude.Launch(ctx, d.spec(task, cwd, settings, run.Prompt))
+		bg, err = bgRunner.Launch(ctx, d.spec(task, cwd, settings, run.Prompt))
 	}
 	if err != nil {
 		d.unconsume(run) // the run never started
@@ -368,7 +455,7 @@ func (d *Dispatcher) start(ctx context.Context, task store.Task, delta []store.C
 	if err := store.UpdateRun(d.DB, run); err != nil {
 		return run, err
 	}
-	store.RecordEvent(d.DB, task.ID, "run_started", fmt.Sprintf("run %d (%s) bg %s", run.ID, run.Mode, bg))
+	store.RecordEvent(d.DB, task.ID, "run_started", fmt.Sprintf("run %d (%s/%s) bg %s", run.ID, bgRunner.Name(), run.Mode, bg))
 	return run, nil
 }
 
@@ -379,8 +466,8 @@ func (d *Dispatcher) unconsume(run store.Run) {
 	}
 }
 
-func (d *Dispatcher) spec(task store.Task, cwd, settings, prompt string) claude.LaunchSpec {
-	s := claude.LaunchSpec{Cwd: cwd, AddDirs: workspace.OtherPaths(task), Prompt: prompt, Name: task.Key, SettingsPath: settings, Bypass: true}
+func (d *Dispatcher) spec(task store.Task, cwd, settings, prompt string) runner.LaunchSpec {
+	s := runner.LaunchSpec{Cwd: cwd, AddDirs: workspace.OtherPaths(task), Prompt: prompt, TaskKey: task.Key, SettingsPath: settings, Bypass: true}
 	if task.Agent != nil {
 		s.Agent = *task.Agent
 	}
@@ -389,6 +476,15 @@ func (d *Dispatcher) spec(task store.Task, cwd, settings, prompt string) claude.
 		s.MCPConfig = mcp
 	}
 	return s
+}
+
+// runnerForTask returns the appropriate Runner for a task.
+func (d *Dispatcher) runnerForTask(task store.Task) runner.Runner {
+	taskRunner := ""
+	if task.Runner != nil {
+		taskRunner = *task.Runner
+	}
+	return runner.ForTask(taskRunner, store.GetSetting(d.DB, "default_runner"), d.Home)
 }
 
 // model picks the task's model, else "" (no --model) when its agent sets one, else default_model.

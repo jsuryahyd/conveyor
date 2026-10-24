@@ -18,7 +18,9 @@ import (
 
 type payload struct {
 	SessionID            string `json:"session_id"`
+	ConversationID       string `json:"conversation_id"` // agy alias
 	Cwd                  string `json:"cwd"`
+	TaskKey              string `json:"task_key"` // optional direct key
 	TranscriptPath       string `json:"transcript_path"`
 	LastAssistantMessage string `json:"last_assistant_message"`
 	Message              string `json:"message"`
@@ -31,7 +33,13 @@ func Handle(db *sql.DB, home, event string, raw []byte) error {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		return fmt.Errorf("parse %s payload: %w", event, err)
 	}
+	if p.SessionID == "" && p.ConversationID != "" {
+		p.SessionID = p.ConversationID
+	}
 	key := workspace.KeyFromCwd(home, p.Cwd)
+	if key == "" && p.TaskKey != "" {
+		key = p.TaskKey
+	}
 	if key == "" {
 		return nil // not one of ours
 	}
@@ -98,12 +106,19 @@ func onPrompt(db *sql.DB, task store.Task, run store.Run) error {
 }
 
 func onStop(db *sql.DB, task store.Task, run store.Run, p payload) error {
-	block, final, hasBlock := statusblock.Parse(p.LastAssistantMessage)
+	return ProcessStop(db, task, run, p.LastAssistantMessage, p.TranscriptPath)
+}
+
+// ProcessStop processes session completion (from hook or background log extraction).
+// It extracts the <conveyor> status block, updates the run, creates agent comments,
+// records learnings/spawns, and transitions the task status accordingly.
+func ProcessStop(db *sql.DB, task store.Task, run store.Run, lastAssistantMessage, transcriptPath string) error {
+	block, final, hasBlock := statusblock.Parse(lastAssistantMessage)
 	if !hasBlock {
-		final = strings.TrimSpace(p.LastAssistantMessage)
+		final = strings.TrimSpace(lastAssistantMessage)
 	}
-	if p.TranscriptPath != "" {
-		if u, err := transcript.Sum(p.TranscriptPath, run.Prompt); err == nil {
+	if transcriptPath != "" {
+		if u, err := transcript.Sum(transcriptPath, run.Prompt); err == nil {
 			run.TokensIn, run.TokensOut = int64(u.In), int64(u.Out)
 			run.CacheRead, run.CacheWrite = int64(u.CacheRead), int64(u.CacheWrite)
 			run.CtxPeak, run.APICalls = int64(u.CtxPeak), int64(u.Calls)

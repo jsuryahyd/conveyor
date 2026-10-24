@@ -120,6 +120,7 @@ func taskNew(s *core.Service, args []string) error {
 	todo := fs.Bool("todo", false, "start in todo instead of backlog")
 	model := fs.String("model", "", "model override")
 	agent := fs.String("agent", "", "Claude subagent name (see conveyor agent list; sub-tasks default to the parent's)")
+	runnerFlag := fs.String("runner", "", "agent runner: claude or agy (sub-tasks default to the parent's)")
 	parent := fs.String("parent", "", "parent task key (the new task becomes its sub-task, e.g. CV-1A)")
 	prio := fs.Int("priority", 0, "priority (higher first)")
 	pos, err := parseArgs(fs, args)
@@ -139,7 +140,7 @@ func taskNew(s *core.Service, args []string) error {
 	}
 	t, err := s.CreateTask(core.NewTaskInput{
 		Title: pos[0], Description: d, Repos: splitCSV(*repos), Primary: *primary, Start: *todo,
-		Model: *model, Agent: *agent, ParentKey: *parent, Priority: *prio,
+		Model: *model, Agent: *agent, Runner: *runnerFlag, ParentKey: *parent, Priority: *prio,
 	})
 	if err != nil {
 		return err
@@ -230,6 +231,15 @@ func taskShow(s *core.Service, args []string) error {
 		}{t, comments, rs, rel})
 	}
 	fmt.Fprintf(out, "%s  %s\nstatus: %s  priority: %d\n", t.Key, t.Title, t.Status, t.Priority)
+	if t.Runner != nil && *t.Runner != "" {
+		fmt.Fprintf(out, "runner: %s\n", *t.Runner)
+	}
+	if t.Model != nil && *t.Model != "" {
+		fmt.Fprintf(out, "model: %s\n", *t.Model)
+	}
+	if t.Agent != nil && *t.Agent != "" {
+		fmt.Fprintf(out, "agent: %s\n", *t.Agent)
+	}
 	for _, r := range t.Repos {
 		p := ""
 		if r.IsPrimary {
@@ -306,6 +316,7 @@ func taskSet(s *core.Service, args []string) error {
 	branch := fs.String("branch", "", "worktree branch (only before the worktree exists)")
 	pr := fs.String("pr", "", "PR URL (empty clears it)")
 	model := fs.String("model", "", "model override (empty clears it)")
+	runnerFlag := fs.String("runner", "", "agent runner: claude or agy (empty clears it)")
 	desc := fs.String("desc", "", "description (backlog only)")
 	descFile := fs.String("desc-file", "", "read the description from a file (backlog only)")
 	pos, err := parseArgs(fs, args)
@@ -313,7 +324,7 @@ func taskSet(s *core.Service, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: conveyor task set KEY [--repo r] [--branch b] [--pr url] [--model m] [--desc d | --desc-file f]")
+		return fmt.Errorf("usage: conveyor task set KEY [--repo r] [--branch b] [--pr url] [--model m] [--runner r] [--desc d | --desc-file f]")
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
@@ -334,11 +345,16 @@ func taskSet(s *core.Service, args []string) error {
 			return err
 		}
 	}
+	if given["runner"] {
+		if err := s.SetTaskRunner(pos[0], *runnerFlag); err != nil {
+			return err
+		}
+	}
 	if !given["branch"] && !given["pr"] {
-		if given["model"] || given["desc"] {
+		if given["model"] || given["runner"] || given["desc"] {
 			return nil
 		}
-		return fmt.Errorf("nothing to set: pass --branch, --pr, --model and/or --desc")
+		return fmt.Errorf("nothing to set: pass --branch, --pr, --model, --runner and/or --desc")
 	}
 	t, err := store.GetTaskByKey(s.DB, pos[0])
 	if err != nil {

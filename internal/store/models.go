@@ -28,6 +28,8 @@ type Task struct {
 	Priority            int        `json:"priority"`
 	Model               *string    `json:"model"`
 	Agent               *string    `json:"agent"`
+	// Runner overrides the default_runner setting for this task ("claude" or "agy"; nil = default).
+	Runner              *string    `json:"runner"`
 	Source              string     `json:"source"`
 	ExternalKey         *string    `json:"external_key"`
 	ExternalURL         *string    `json:"external_url"`

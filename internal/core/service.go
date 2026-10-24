@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/JayaSuryaOolio/conveyor/internal/claude"
+	"github.com/JayaSuryaOolio/conveyor/internal/runner"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
 
@@ -33,6 +33,8 @@ type NewTaskInput struct {
 	Model       string
 	Agent       string
 	AgentSet    bool // Agent is final: "" means no agent rather than the parent's
+	Runner      string
+	RunnerSet   bool // Runner is final: "" means default runner rather than parent's
 	ParentKey   string
 	Priority    int
 	// Source, ExternalKey and ExternalURL come from importers (default source is manual).
@@ -67,6 +69,11 @@ func (s *Service) CreateTask(in NewTaskInput) (store.Task, error) {
 	if strings.TrimSpace(in.Title) == "" {
 		return store.Task{}, fmt.Errorf("title is required")
 	}
+	if in.Runner != "" {
+		if err := runner.ValidateRunner(in.Runner); err != nil {
+			return store.Task{}, err
+		}
+	}
 	var parent *store.Task
 	if in.ParentKey != "" {
 		p, err := store.GetTaskByKey(s.DB, in.ParentKey)
@@ -86,6 +93,9 @@ func (s *Service) CreateTask(in NewTaskInput) (store.Task, error) {
 	}
 	if in.Agent == "" && !in.AgentSet && parent != nil && parent.Agent != nil {
 		in.Agent = *parent.Agent // like repos: a sub-task starts with its parent's agent
+	}
+	if in.Runner == "" && !in.RunnerSet && parent != nil && parent.Runner != nil {
+		in.Runner = *parent.Runner
 	}
 	if len(in.Repos) == 0 {
 		return store.Task{}, fmt.Errorf("at least one repo is required")
@@ -116,7 +126,7 @@ func (s *Service) CreateTask(in NewTaskInput) (store.Task, error) {
 	}
 	t := store.Task{
 		Title: in.Title, Description: in.Description, Priority: in.Priority,
-		Model: optional(in.Model), Agent: optional(in.Agent), Status: store.StatusBacklog,
+		Model: optional(in.Model), Agent: optional(in.Agent), Runner: optional(in.Runner), Status: store.StatusBacklog,
 		Source: in.Source, ExternalKey: optional(in.ExternalKey), ExternalURL: optional(in.ExternalURL),
 	}
 	if in.Start {
@@ -262,32 +272,62 @@ func (s *Service) bgIDs(taskID int64) []string {
 	return ids
 }
 
+// RunnerForTask returns the appropriate runner backend for a task.
+func (s *Service) RunnerForTask(t store.Task) runner.Runner {
+	taskRunner := ""
+	if t.Runner != nil {
+		taskRunner = *t.Runner
+	}
+	return runner.ForTask(taskRunner, store.GetSetting(s.DB, "default_runner"), s.Home)
+}
+
 // CleanupSessions stops and removes the task's background sessions (best effort).
 func (s *Service) CleanupSessions(taskID int64) {
+	t, err := store.GetTask(s.DB, taskID)
+	var bgRunner runner.Runner
+	if err == nil {
+		bgRunner = s.RunnerForTask(t)
+	} else {
+		bgRunner = runner.NewClaudeRunner()
+	}
 	for _, id := range s.bgIDs(taskID) {
-		claude.Stop(context.Background(), id)
-		claude.Remove(context.Background(), id)
+		bgRunner.Stop(context.Background(), id)
+		bgRunner.Remove(context.Background(), id)
 	}
 }
 
-// Stop stops the task's background Claude sessions.
+// Stop stops the task's background sessions.
 func (s *Service) Stop(key string) error {
 	t, err := store.GetTaskByKey(s.DB, key)
 	if err != nil {
 		return err
 	}
+	bgRunner := s.RunnerForTask(t)
 	runs, err := store.ActiveRuns(s.DB)
 	if err != nil {
 		return err
 	}
 	for _, r := range runs {
 		if r.TaskID == t.ID && r.BgID != nil {
-			if err := claude.Stop(context.Background(), *r.BgID); err != nil {
+			if err := bgRunner.Stop(context.Background(), *r.BgID); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// SetTaskRunner sets (or with "" clears) the task's runner override.
+func (s *Service) SetTaskRunner(key, runnerName string) error {
+	if err := runner.ValidateRunner(runnerName); err != nil {
+		return err
+	}
+	t, err := store.GetTaskByKey(s.DB, key)
+	if err != nil {
+		return err
+	}
+	t.Runner = optional(runnerName)
+	return store.UpdateTask(s.DB, t)
 }
 
 // MarkDone moves a task to done.

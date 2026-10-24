@@ -13,6 +13,7 @@ var Defaults = map[string]string{
 	"comment_debounce_secs":    "20",
 	"max_consecutive_failures": "3",
 	"default_model":            "",
+	"default_runner":           "claude", // "claude" or "agy"
 	"terminal_template":        `osascript -e 'tell application "Terminal" to do script "cd {cwd} && {cmd}"' -e 'tell application "Terminal" to activate'`,
 	"brief_extra_rules":        "",
 	"prompt_fresh":             "",

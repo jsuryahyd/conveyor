@@ -186,6 +186,7 @@ type TaskCard struct {
 	Priority    int      `json:"priority"`
 	Parent      string   `json:"parent"` // parent task key, "" for top-level
 	Repos       []string `json:"repos"`
+	Runner      string   `json:"runner"`
 	LastSummary string   `json:"lastSummary"`
 	CtxPeak     int64    `json:"ctxPeak"`
 	UpdatedAt   string   `json:"updatedAt"`
@@ -214,6 +215,9 @@ func (a *App) ListTasks() ([]TaskCard, error) {
 		c := TaskCard{Key: t.Key, Title: t.Title, Status: string(t.Status), Priority: t.Priority, Repos: []string{}, UpdatedAt: t.UpdatedAt}
 		if t.ParentID != nil {
 			c.Parent = keys[*t.ParentID]
+		}
+		if t.Runner != nil {
+			c.Runner = *t.Runner
 		}
 		for _, r := range t.Repos {
 			c.Repos = append(c.Repos, r.RepoName)
@@ -274,6 +278,7 @@ func (a *App) SetParent(key, parent string) error { return a.svc.SetParent(key, 
 // CreateTask creates a task and returns its key.
 func (a *App) CreateTask(in core.NewTaskInput) (string, error) {
 	in.AgentSet = true // the dialog prefills the parent's agent; a cleared field means none
+	in.RunnerSet = true
 	t, err := a.svc.CreateTask(in)
 	return t.Key, err
 }
@@ -376,6 +381,9 @@ func (a *App) SetTaskAgent(key, agent string) error { return a.svc.SetTaskAgent(
 
 // SetTaskModel changes the task's model override ("" clears it).
 func (a *App) SetTaskModel(key, model string) error { return a.svc.SetTaskModel(key, model) }
+
+// SetTaskRunner changes the task's runner override ("" clears it).
+func (a *App) SetTaskRunner(key, runner string) error { return a.svc.SetTaskRunner(key, runner) }
 
 // SetTaskDescription replaces a backlog task's description.
 func (a *App) SetTaskDescription(key, desc string) error { return a.svc.SetTaskDescription(key, desc) }

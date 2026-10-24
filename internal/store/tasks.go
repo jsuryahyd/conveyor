@@ -7,16 +7,15 @@ import (
 	"strings"
 )
 
-const taskCols = `id, key, title, description, status, priority, model, agent, source, external_key,
+const taskCols = `id, key, title, description, status, priority, model, agent, runner, source, external_key,
  external_url, parent_id, consecutive_failures, created_at, updated_at`
 
 func scanTask(r interface{ Scan(...any) error }) (Task, error) {
 	var t Task
-	err := r.Scan(&t.ID, &t.Key, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Model, &t.Agent, &t.Source,
+	err := r.Scan(&t.ID, &t.Key, &t.Title, &t.Description, &t.Status, &t.Priority, &t.Model, &t.Agent, &t.Runner, &t.Source,
 		&t.ExternalKey, &t.ExternalURL, &t.ParentID, &t.ConsecutiveFailures, &t.CreatedAt, &t.UpdatedAt)
 	return t, err
 }
-
 func loadRepos(db dbtx, taskID int64) ([]TaskRepo, error) {
 	rows, err := db.Query(`SELECT tr.task_id, tr.repo_id, r.name, tr.is_primary, tr.branch, tr.worktree_path, tr.pr_url, tr.pr_state
  FROM task_repos tr JOIN repos r ON r.id=tr.repo_id WHERE tr.task_id=? ORDER BY tr.is_primary DESC, r.name`, taskID)
@@ -97,9 +96,9 @@ func CreateTask(db *sql.DB, t Task, repos []TaskRepo) (Task, error) {
 				return err
 			}
 		}
-		res, err := tx.Exec(`INSERT INTO tasks (key, title, description, status, priority, model, agent, source, external_key,
- external_url, parent_id, consecutive_failures, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			t.Key, t.Title, t.Description, t.Status, t.Priority, t.Model, t.Agent, t.Source, t.ExternalKey,
+		res, err := tx.Exec(`INSERT INTO tasks (key, title, description, status, priority, model, agent, runner, source, external_key,
+ external_url, parent_id, consecutive_failures, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			t.Key, t.Title, t.Description, t.Status, t.Priority, t.Model, t.Agent, t.Runner, t.Source, t.ExternalKey,
 			t.ExternalURL, t.ParentID, t.ConsecutiveFailures, t.CreatedAt, t.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("insert task: %w", err)
@@ -194,10 +193,10 @@ func UpdateTaskStatus(db *sql.DB, id int64, to Status, actor Actor) (Task, error
 	return GetTask(db, id)
 }
 
-// UpdateTask writes title, description, priority, model, agent and consecutive_failures.
+// UpdateTask writes title, description, priority, model, agent, runner and consecutive_failures.
 func UpdateTask(db *sql.DB, t Task) error {
-	res, err := db.Exec(`UPDATE tasks SET title=?, description=?, priority=?, model=?, agent=?, consecutive_failures=?, updated_at=? WHERE id=?`,
-		t.Title, t.Description, t.Priority, t.Model, t.Agent, t.ConsecutiveFailures, now(), t.ID)
+	res, err := db.Exec(`UPDATE tasks SET title=?, description=?, priority=?, model=?, agent=?, runner=?, consecutive_failures=?, updated_at=? WHERE id=?`,
+		t.Title, t.Description, t.Priority, t.Model, t.Agent, t.Runner, t.ConsecutiveFailures, now(), t.ID)
 	if err != nil {
 		return fmt.Errorf("update task %d: %w", t.ID, err)
 	}
@@ -216,6 +215,18 @@ func UpdateTaskRepo(db *sql.DB, r TaskRepo) error {
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return fmt.Errorf("task repo %d/%d: %w", r.TaskID, r.RepoID, sql.ErrNoRows)
+	}
+	return nil
+}
+
+// SetTaskRunner sets (or with "" clears) the task's runner override.
+func SetTaskRunner(db *sql.DB, id int64, runner *string) error {
+	res, err := db.Exec(`UPDATE tasks SET runner=?, updated_at=? WHERE id=?`, runner, now(), id)
+	if err != nil {
+		return fmt.Errorf("set task runner: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("task %d: %w", id, sql.ErrNoRows)
 	}
 	return nil
 }

@@ -113,18 +113,19 @@ func (s *Service) Actions(key string) ([]Action, error) {
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
+	bgRunner := s.RunnerForTask(t)
 	switch {
 	case err != nil:
 	case isActive(run) && run.BgID != nil:
-		out = append(out, Action{"Attach to session", primary, cwd, claude.AttachCommand(*run.BgID), "attach"})
+		out = append(out, Action{"Attach to session", primary, cwd, bgRunner.AttachCommand(*run.BgID), "attach"})
 	case !isActive(run) && run.SessionID != nil:
-		out = append(out, Action{"Resume in terminal", primary, cwd, claude.ResumeCommand(*run.SessionID, settings), "resume"})
+		out = append(out, Action{"Resume in terminal", primary, cwd, bgRunner.ResumeCommand(*run.SessionID, settings), "resume"})
 	}
 	briefPath, err := brief.Render(s.DB, s.Home, t)
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, Action{"New session from brief", primary, cwd, claude.FreshCommand(settings, briefPath, workspace.OtherPaths(t)), "fresh"})
+	out = append(out, Action{"New session from brief", primary, cwd, bgRunner.FreshCommand(settings, briefPath, workspace.OtherPaths(t)), "fresh"})
 	for _, r := range t.Repos {
 		if r.WorktreePath == nil {
 			continue
