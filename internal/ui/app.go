@@ -385,6 +385,30 @@ func (a *App) SetTaskModel(key, model string) error { return a.svc.SetTaskModel(
 // SetTaskRunner changes the task's runner override ("" clears it).
 func (a *App) SetTaskRunner(key, runner string) error { return a.svc.SetTaskRunner(key, runner) }
 
+// CLIAgent represents a detected CLI agent/runner on the system.
+type CLIAgent struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Command   string `json:"command"`
+	Installed bool   `json:"installed"`
+	Path      string `json:"path"`
+}
+
+// ListCLIAgents detects and returns the available CLI runner backends.
+func (a *App) ListCLIAgents() []CLIAgent {
+	agents := []CLIAgent{
+		{ID: "claude", Name: "Claude Code", Command: "claude"},
+		{ID: "agy", Name: "Antigravity", Command: "agy"},
+	}
+	for i := range agents {
+		if p, err := exec.LookPath(agents[i].Command); err == nil {
+			agents[i].Installed = true
+			agents[i].Path = p
+		}
+	}
+	return agents
+}
+
 // SetTaskDescription replaces a backlog task's description.
 func (a *App) SetTaskDescription(key, desc string) error { return a.svc.SetTaskDescription(key, desc) }
 

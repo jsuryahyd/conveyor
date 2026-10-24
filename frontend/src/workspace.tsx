@@ -152,7 +152,7 @@ export function TaskSidebar({t, runs, reload, onTerm}: {t: store.Task; runs: sto
     return (
         <Stack gap="sm" component="aside" miw={0}>
             <Group justify="space-between" wrap="nowrap">
-                <Group gap={4}><Text size="sm" fw={600}>Agent</Text><TaskSettings k={k} model={t.model ?? ''} reload={reload}/></Group>
+                <Group gap={4}><Text size="sm" fw={600}>Agent</Text><TaskSettings k={k} model={t.model ?? ''} runner={t.runner ?? ''} reload={reload}/></Group>
                 <TaskAgent k={k} repos={repos.map(r => r.repo_name)} agent={t.agent ?? ''}/>
             </Group>
             <Group justify="space-between">

@@ -9,3 +9,4 @@ frontend/dist/*
 !frontend/dist/.gitkeep
 build/bin
 .playwright-mcp/
+frontend/test-results/

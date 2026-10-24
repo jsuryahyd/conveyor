@@ -1,7 +1,7 @@
 import {useState} from 'react'
 import {ActionIcon, Button, Checkbox, Code, Group, Modal, MultiSelect, ScrollArea, SegmentedControl, Select, SelectProps, Stack, Table, Tabs, Text, TextInput, Textarea, Title, Tooltip} from '@mantine/core'
 import {IconAdjustments} from '@tabler/icons-react'
-import {AddRepo, CreateTask, GetPromptDefaults, GetTask, GetSettings, ListAgents, ListRepos, ListTasks, PreviewBrief, SetSetting, SetTaskAgent, SetTaskModel} from '../wailsjs/go/ui/App'
+import {AddRepo, CreateTask, GetPromptDefaults, GetTask, GetSettings, ListAgents, ListCLIAgents, ListRepos, ListTasks, PreviewBrief, SetSetting, SetTaskAgent, SetTaskModel, SetTaskRunner} from '../wailsjs/go/ui/App'
 import {core} from '../wailsjs/go/models'
 import {Nav, errMsg} from './components'
 import {Markdown, MarkdownEditor} from './markdown'
@@ -17,20 +17,22 @@ export function NewTask({nav, close}: {nav: Nav; close: () => void}) {
     const [primary, setPrimary] = useState('')
     const [model, setModel] = useState('')
     const [agent, setAgent] = useState('')
+    const [runner, setRunner] = useState('')
     const [start, setStart] = useState(false)
     const prim = sel.includes(primary) ? primary : sel[0] ?? ''
     const submit = () =>
         CreateTask(core.NewTaskInput.createFrom({
             Title: title, Description: desc, Repos: sel, Primary: prim,
-            Start: start, Model: model, Agent: agent, ParentKey: parent,
+            Start: start, Model: model, Agent: agent, Runner: runner, ParentKey: parent,
         })).then(key => { close(); nav({name: 'task', key}) }, errMsg)
-    // Picking a parent prefills repos, primary and agent from it; they stay editable. Clearing leaves them.
+    // Picking a parent prefills repos, primary, agent and runner from it; they stay editable. Clearing leaves them.
     const pickParent = (key: string | null) => {
         setParent(key ?? '')
         if (key) GetTask(key).then(d => {
             setSel(d.task.repos?.map(r => r.repo_name) ?? [])
             setPrimary(d.task.repos?.find(r => r.is_primary)?.repo_name ?? '')
             setAgent(d.task.agent ?? '')
+            setRunner(d.task.runner ?? '')
         }, errMsg)
     }
     return (
@@ -43,6 +45,7 @@ export function NewTask({nav, close}: {nav: Nav; close: () => void}) {
                 <MultiSelect label="Repos" placeholder="Pick repos" description={repos?.length === 0 ? 'Add one on the Repos page first' : undefined}
                              data={repos?.map(r => r.name) ?? []} value={sel} onChange={setSel}/>
                 {sel.length > 1 && <Select label="Primary repo" allowDeselect={false} data={sel} value={prim} onChange={v => setPrimary(v ?? '')}/>}
+                <RunnerSelect value={runner} onChange={setRunner}/>
                 <ModelSelect value={model} onChange={setModel}/>
                 <AgentSelect repos={sel} value={agent} onChange={setAgent}/>
                 <Checkbox label="Start now (todo)" checked={start} onChange={e => setStart(e.currentTarget.checked)}/>
@@ -75,16 +78,34 @@ export function ModelSelect({value, onChange, ...rest}: {value: string; onChange
     return <Select aria-label="Model" allowDeselect={false} {...rest} value={value} onChange={v => onChange(v ?? '')} data={data}/>
 }
 
+/** Select of detected CLI agent runners (claude, agy); "" means default. */
+export function RunnerSelect({value, onChange, size, label = "Agent runner", description, ...rest}: {value: string; onChange: (r: string) => void; size?: string; label?: string; description?: string} & Omit<SelectProps, 'value' | 'onChange' | 'data'>) {
+    const {data} = useData(ListCLIAgents, [])
+    const items = (data && data.length > 0) ? data.map(a => ({
+        value: a.id,
+        label: `${a.name} (${a.command})${a.installed ? ' [detected]' : ' [not found]'}`
+    })) : [
+        {value: 'claude', label: 'Claude Code (claude)'},
+        {value: 'agy', label: 'Antigravity (agy)'},
+    ]
+    const selectData = [{value: '', label: 'Default runner'}, ...items]
+    return <Select size={size} label={label} description={description} aria-label="Agent runner" clearable value={value || null} onChange={v => onChange(v ?? '')} data={selectData} {...rest}/>
+}
+
 /** Low-usage task settings behind one icon, so the sidebar stays short. */
-export function TaskSettings({k, model, reload}: {k: string; model: string; reload: () => void}) {
+export function TaskSettings({k, model, runner, reload}: {k: string; model: string; runner?: string; reload: () => void}) {
     const [open, setOpen] = useState(false)
+    const [curRunner, setCurRunner] = useState(runner ?? '')
     return <>
         <Tooltip label="More settings">
-            <ActionIcon variant="subtle" color="gray" aria-label="More settings" onClick={() => setOpen(true)}><IconAdjustments size={16}/></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" aria-label="More settings" onClick={() => { setCurRunner(runner ?? ''); setOpen(true); }}><IconAdjustments size={16}/></ActionIcon>
         </Tooltip>
         <Modal opened={open} onClose={() => setOpen(false)} title={`${k} settings`} size="sm">
-            <ModelSelect label="Model" value={model} onChange={m => SetTaskModel(k, m).then(reload, errMsg)}/>
-            <Text size="xs" c="dimmed" mt={4}>Used from the next run. Default: the agent's model, else the default_model setting.</Text>
+            <Stack gap="sm">
+                <RunnerSelect label="Agent runner" value={curRunner} onChange={r => { setCurRunner(r); SetTaskRunner(k, r).then(reload, errMsg); }}/>
+                <ModelSelect label="Model" value={model} onChange={m => SetTaskModel(k, m).then(reload, errMsg)}/>
+                <Text size="xs" c="dimmed" mt={4}>Used from the next run. Runner default: default_runner setting. Model default: the agent's model, else the default_model setting.</Text>
+            </Stack>
         </Modal>
     </>
 }
@@ -111,12 +132,13 @@ export function Repos() {
     )
 }
 
-type Field = {k: string; label: string; desc: string; kind?: "area" | "md"}
+type Field = {k: string; label: string; desc: string; kind?: "area" | "md" | "runner"}
 
 const TABS: {name: string; fields: Field[]}[] = [
     {name: "General", fields: [
         {k: "key_prefix", label: "Task key prefix", desc: "Prefix for new task keys, e.g. CV gives CV-12."},
-        {k: "default_model", label: "Default model", desc: "Model for runs that do not set one. Empty uses the Claude Code default."},
+        {k: "default_runner", label: "Default CLI agent", desc: "Select existing CLI agent for running tasks. Automatically detects installed CLI tools on your system.", kind: "runner"},
+        {k: "default_model", label: "Default model", desc: "Model for runs that do not set one. Empty uses the agent default."},
     ]},
     {name: "Dispatch", fields: [
         {k: "max_parallel", label: "Max parallel runs", desc: "How many tasks run at once."},
@@ -161,6 +183,29 @@ export function Settings() {
     )
 }
 
+function RunnerSettingSelect({f, val, setVal}: {f: Field; val: string; setVal: (v: string) => void}) {
+    const {data: agents} = useData(ListCLIAgents, [])
+    const items = (agents && agents.length > 0) ? agents.map(a => ({
+        value: a.id,
+        label: `${a.name} (${a.command})${a.installed ? ` · detected (${a.path})` : ' · not detected'}`
+    })) : [
+        {value: 'claude', label: 'Claude Code (claude)'},
+        {value: 'agy', label: 'Antigravity (agy)'},
+    ]
+    return (
+        <Select
+            aria-label={f.label}
+            style={{flex: 1}}
+            label={f.label}
+            description={f.desc}
+            allowDeselect={false}
+            data={items}
+            value={val || 'claude'}
+            onChange={v => setVal(v ?? 'claude')}
+        />
+    )
+}
+
 function SettingRow({f, v, ph, reload}: {f: Field; v: string; ph?: string; reload: () => void}) {
     const [val, setVal] = useState(v)
     const props = {style: {flex: 1}, label: f.label, description: f.desc, placeholder: ph}
@@ -171,6 +216,7 @@ function SettingRow({f, v, ph, reload}: {f: Field; v: string; ph?: string; reloa
                 <MarkdownEditor minRows={4} value={val} onChange={setVal}/>
             </Stack>
                 : f.kind === "area" ? <Textarea {...props} autosize minRows={2} maxRows={10} value={val} onChange={e => setVal(e.target.value)}/>
+                : f.kind === "runner" ? <RunnerSettingSelect f={f} val={val} setVal={setVal}/>
                 : <TextInput {...props} value={val} onChange={e => setVal(e.target.value)}/>}
             <Button disabled={val === v} onClick={() => SetSetting(f.k, val).then(reload, errMsg)}>Save</Button>
         </Group>

@@ -61,6 +61,8 @@ export namespace core {
 	    Model: string;
 	    Agent: string;
 	    AgentSet: boolean;
+	    Runner: string;
+	    RunnerSet: boolean;
 	    ParentKey: string;
 	    Priority: number;
 	    Source: string;
@@ -81,6 +83,8 @@ export namespace core {
 	        this.Model = source["Model"];
 	        this.Agent = source["Agent"];
 	        this.AgentSet = source["AgentSet"];
+	        this.Runner = source["Runner"];
+	        this.RunnerSet = source["RunnerSet"];
 	        this.ParentKey = source["ParentKey"];
 	        this.Priority = source["Priority"];
 	        this.Source = source["Source"];
@@ -440,6 +444,7 @@ export namespace store {
 	    priority: number;
 	    model?: string;
 	    agent?: string;
+	    runner?: string;
 	    source: string;
 	    external_key?: string;
 	    external_url?: string;
@@ -463,6 +468,7 @@ export namespace store {
 	        this.priority = source["priority"];
 	        this.model = source["model"];
 	        this.agent = source["agent"];
+	        this.runner = source["runner"];
 	        this.source = source["source"];
 	        this.external_key = source["external_key"];
 	        this.external_url = source["external_url"];
@@ -530,6 +536,26 @@ export namespace ui {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.brief = source["brief"];
 	        this.prompt = source["prompt"];
+	    }
+	}
+	export class CLIAgent {
+	    id: string;
+	    name: string;
+	    command: string;
+	    installed: boolean;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CLIAgent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.command = source["command"];
+	        this.installed = source["installed"];
+	        this.path = source["path"];
 	    }
 	}
 	export class LearningRow {
@@ -603,6 +629,7 @@ export namespace ui {
 	    priority: number;
 	    parent: string;
 	    repos: string[];
+	    runner: string;
 	    lastSummary: string;
 	    ctxPeak: number;
 	    updatedAt: string;
@@ -619,6 +646,7 @@ export namespace ui {
 	        this.priority = source["priority"];
 	        this.parent = source["parent"];
 	        this.repos = source["repos"];
+	        this.runner = source["runner"];
 	        this.lastSummary = source["lastSummary"];
 	        this.ctxPeak = source["ctxPeak"];
 	        this.updatedAt = source["updatedAt"];

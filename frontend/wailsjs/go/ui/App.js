@@ -118,6 +118,10 @@ export function ListAutomations() {
   return window['go']['ui']['App']['ListAutomations']();
 }
 
+export function ListCLIAgents() {
+  return window['go']['ui']['App']['ListCLIAgents']();
+}
+
 export function ListRepos() {
   return window['go']['ui']['App']['ListRepos']();
 }
@@ -200,6 +204,10 @@ export function SetTaskModel(arg1, arg2) {
 
 export function SetTaskRepo(arg1, arg2, arg3, arg4) {
   return window['go']['ui']['App']['SetTaskRepo'](arg1, arg2, arg3, arg4);
+}
+
+export function SetTaskRunner(arg1, arg2) {
+  return window['go']['ui']['App']['SetTaskRunner'](arg1, arg2);
 }
 
 export function ShowError(arg1) {

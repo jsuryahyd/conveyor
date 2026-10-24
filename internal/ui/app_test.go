@@ -131,3 +131,45 @@ func TestAutomationCRUDAndDescribeSchedule(t *testing.T) {
 		t.Fatalf("describe invalid: %+v", i)
 	}
 }
+
+func TestListCLIAgentsAndSetTaskRunner(t *testing.T) {
+	a, _ := newApp(t)
+	agents := a.ListCLIAgents()
+	if len(agents) < 2 {
+		t.Fatalf("expected at least 2 CLI agents (claude and agy), got %d", len(agents))
+	}
+	hasClaude, hasAgy := false, false
+	for _, ag := range agents {
+		if ag.ID == "claude" {
+			hasClaude = true
+		}
+		if ag.ID == "agy" {
+			hasAgy = true
+		}
+	}
+	if !hasClaude || !hasAgy {
+		t.Fatalf("expected claude and agy in agents: %+v", agents)
+	}
+
+	// Test task creation with runner
+	key, err := a.CreateTask(core.NewTaskInput{Title: "TaskWithRunner", Repos: []string{"a"}, Runner: "agy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := a.GetTask(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Task.Runner == nil || *d.Task.Runner != "agy" {
+		t.Fatalf("expected runner agy, got %v", d.Task.Runner)
+	}
+
+	// Test SetTaskRunner
+	if err := a.SetTaskRunner(key, "claude"); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = a.GetTask(key)
+	if d.Task.Runner == nil || *d.Task.Runner != "claude" {
+		t.Fatalf("expected runner claude, got %v", d.Task.Runner)
+	}
+}
