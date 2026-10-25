@@ -165,6 +165,31 @@ export namespace core {
 
 }
 
+export namespace runner {
+	
+	export class CLIAgent {
+	    id: string;
+	    name: string;
+	    command: string;
+	    installed: boolean;
+	    path: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CLIAgent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.name = source["name"];
+	        this.command = source["command"];
+	        this.installed = source["installed"];
+	        this.path = source["path"];
+	    }
+	}
+
+}
+
 export namespace store {
 	
 	export class App {
@@ -536,26 +561,6 @@ export namespace ui {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.brief = source["brief"];
 	        this.prompt = source["prompt"];
-	    }
-	}
-	export class CLIAgent {
-	    id: string;
-	    name: string;
-	    command: string;
-	    installed: boolean;
-	    path: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new CLIAgent(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.name = source["name"];
-	        this.command = source["command"];
-	        this.installed = source["installed"];
-	        this.path = source["path"];
 	    }
 	}
 	export class LearningRow {

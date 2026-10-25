@@ -3,6 +3,7 @@
 import {core} from '../models';
 import {store} from '../models';
 import {ui} from '../models';
+import {runner} from '../models';
 
 export function AcceptLearning(arg1:number,arg2:string):Promise<void>;
 
@@ -62,7 +63,7 @@ export function ListApps():Promise<Array<store.App>>;
 
 export function ListAutomations():Promise<Array<store.Automation>>;
 
-export function ListCLIAgents():Promise<Array<ui.CLIAgent>>;
+export function ListCLIAgents():Promise<Array<runner.CLIAgent>>;
 
 export function ListRepos():Promise<Array<store.Repo>>;
 
