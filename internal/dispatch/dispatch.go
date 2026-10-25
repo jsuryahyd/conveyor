@@ -133,15 +133,19 @@ func (d *Dispatcher) reap(ctx context.Context) error {
 		return err
 	}
 	var cand []store.Run
-	needAgents := false
+	needClaudeAgents := false
 	for _, r := range runs {
+		task, _ := store.GetTask(d.DB, r.TaskID)
+		bgRunner := d.runnerForTask(task)
 		if r.Kind == "interactive" {
 			if r.SessionID != nil { // without a session id there is nothing to match
-				needAgents = true
+				needClaudeAgents = true
 				cand = append(cand, r)
 			}
 		} else if r.BgID != nil {
-			needAgents = true
+			if bgRunner.Name() == "claude" {
+				needClaudeAgents = true
+			}
 			cand = append(cand, r)
 		} else if r.Status == "launching" { // dispatcher died before saving the bg id
 			cand = append(cand, r)
@@ -153,14 +157,15 @@ func (d *Dispatcher) reap(ctx context.Context) error {
 
 	// Collect the list of live claude agents (for claude-backed runs and interactive sessions).
 	alive, sessions := map[string]claude.Agent{}, map[string]bool{}
-	if needAgents {
+	if needClaudeAgents {
 		agents, err := claude.Agents(ctx)
-		if err != nil {
-			return err
-		}
-		for _, a := range agents {
-			alive[a.ID] = a
-			sessions[a.SessionID] = true
+		if err == nil {
+			for _, a := range agents {
+				alive[a.ID] = a
+				sessions[a.SessionID] = true
+			}
+		} else {
+			log.Printf("reap: claude agents check failed: %v", err)
 		}
 	}
 
