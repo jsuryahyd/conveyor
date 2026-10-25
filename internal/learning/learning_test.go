@@ -129,3 +129,40 @@ func TestApplyRetryAfterPartialFailure(t *testing.T) {
 		t.Fatalf("applied %d", len(applied))
 	}
 }
+
+func TestDynamicTargetResolutionAgy(t *testing.T) {
+	svc, _ := setup(t)
+	// Set default runner to agy
+	if err := store.SetSetting(svc.DB, "default_runner", "agy"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Learning without target accepted should resolve to AGENTS.md
+	if err := Accept(svc.DB, 1, ""); err != nil {
+		t.Fatal(err)
+	}
+	l, err := store.GetLearning(svc.DB, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Target == nil || *l.Target != "AGENTS.md" {
+		t.Fatalf("expected AGENTS.md, got %v", l.Target)
+	}
+
+	// Apply learnings to repo 'a'
+	keys, err := Apply(svc, "a")
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("Apply: %v, keys: %v", err, keys)
+	}
+	tk, err := store.GetTaskByKey(svc.DB, keys[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(tk.Description, "(target: AGENTS.md, from") {
+		t.Errorf("task description should target AGENTS.md:\n%s", tk.Description)
+	}
+	if tk.Runner == nil || *tk.Runner != "agy" {
+		t.Errorf("expected task runner agy, got %v", tk.Runner)
+	}
+}
+

@@ -43,6 +43,15 @@ func ListRepos(db *sql.DB) ([]Repo, error) {
 	return out, rows.Err()
 }
 
+// GetRepo returns the repo by ID or a wrapped sql.ErrNoRows.
+func GetRepo(db *sql.DB, id int64) (Repo, error) {
+	r, err := scanRepo(db.QueryRow(`SELECT `+repoCols+` FROM repos WHERE id=?`, id))
+	if err != nil {
+		return Repo{}, fmt.Errorf("repo id %d: %w", id, err)
+	}
+	return r, nil
+}
+
 // GetRepoByName returns the repo or a wrapped sql.ErrNoRows.
 func GetRepoByName(db *sql.DB, name string) (Repo, error) {
 	r, err := scanRepo(db.QueryRow(`SELECT `+repoCols+` FROM repos WHERE name=?`, name))

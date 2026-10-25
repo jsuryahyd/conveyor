@@ -107,3 +107,22 @@ func TestSettingsShapeBrief(t *testing.T) {
 		t.Errorf("custom resume %q", got)
 	}
 }
+
+func TestAgyRulesAndContext(t *testing.T) {
+	dir := t.TempDir()
+	db, err := store.Open(filepath.Join(dir, "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	runnerName := "agy"
+	tk := store.Task{Key: "CV-4", Title: "Agy Task", Runner: &runnerName}
+	got, err := Build(db, tk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "The repo's AGENTS.md, skills, commands and agents are the authority") {
+		t.Errorf("brief should mention AGENTS.md for agy runner:\n%s", got)
+	}
+}
+

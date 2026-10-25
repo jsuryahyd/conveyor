@@ -71,8 +71,11 @@ func workflows(db *sql.DB, task store.Task) string {
 			root = repo.Path
 		}
 		var lines []string
-		if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); err == nil {
-			lines = append(lines, fmt.Sprintf("- Read `%s` before changing this repo", filepath.Join(root, "CLAUDE.md")))
+		for _, doc := range []string{"AGENTS.md", "CLAUDE.md"} {
+			if _, err := os.Stat(filepath.Join(root, doc)); err == nil {
+				lines = append(lines, fmt.Sprintf("- Read `%s` before changing this repo", filepath.Join(root, doc)))
+				break
+			}
 		}
 		cmds, _ := filepath.Glob(filepath.Join(root, ".claude", "commands", "*.md"))
 		for _, f := range cmds {

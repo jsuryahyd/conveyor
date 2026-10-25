@@ -60,9 +60,29 @@ const (
 	DefaultResume = "New comments on {key}:\n{comments}\n(The brief at {brief} is up to date.)"
 )
 
+// authorityRunner returns the active runner for a task.
+func authorityRunner(db *sql.DB, task store.Task) string {
+	if task.Runner != nil && *task.Runner != "" {
+		return *task.Runner
+	}
+	return store.GetSetting(db, "default_runner")
+}
+
 // rules is the Rules section body: the defaults, the PR comment prefix rule, then (if extra) the user's extra rules.
 func rules(db *sql.DB, extra bool) string {
-	r := defaultRules
+	return rulesForTask(db, store.Task{}, extra)
+}
+
+func rulesForTask(db *sql.DB, task store.Task, extra bool) string {
+	doc := "CLAUDE.md"
+	if authorityRunner(db, task) == "agy" {
+		doc = "AGENTS.md"
+	}
+	r := fmt.Sprintf(`- Work only inside the worktrees listed above.
+- Open at most one PR per repo.
+- Never push to the default branch.
+- The repo's %s, skills, commands and agents are the authority on how to work in it (build, test, commit, PR, changesets). Use them over your own defaults and over generic user-level skills; where they disagree with this brief, follow the repo, except for the worktree, PR and status block rules here.
+`, doc)
 	if p := store.GetSetting(db, "pr_comment_prefix"); p != "" {
 		r += fmt.Sprintf("- Start every comment or reply you post on a PR or issue with `%s`.\n", p)
 	}
@@ -145,7 +165,14 @@ func Build(db *sql.DB, task store.Task) (string, error) {
 	}
 	fmt.Fprintf(&b, "\n## Acceptance criteria\n\n%s\n", criteria(runs, "see description"))
 	if w := workflows(db, task); w != "" {
-		fmt.Fprintf(&b, "\n## Other repos' context\n\nClaude Code loaded only the primary repo's CLAUDE.md, skills, commands and agents. For these repos, read the files named here (`.claude/commands/<name>.md`, `.claude/skills/<name>/SKILL.md`, `.claude/agents/<name>.md`) when the work touches them.\n\n%s", w)
+		runnerName := authorityRunner(db, task)
+		runnerTitle := "Claude Code"
+		doc := "CLAUDE.md"
+		if runnerName == "agy" {
+			runnerTitle = "Antigravity"
+			doc = "AGENTS.md"
+		}
+		fmt.Fprintf(&b, "\n## Other repos' context\n\n%s loaded only the primary repo's %s, skills, commands and agents. For these repos, read the files named here (`.claude/commands/<name>.md`, `.claude/skills/<name>/SKILL.md`, `.claude/agents/<name>.md`) when the work touches them.\n\n%s", runnerTitle, doc, w)
 	}
 	history(&b, "##", runs, comments)
 	rel, err := store.ListRelations(db, task)
@@ -163,7 +190,7 @@ func Build(db *sql.DB, task store.Task) (string, error) {
 		fmt.Fprintf(&b, "- %s: %s %s (%s)\n", l.Label, l.Task.Key, l.Task.Title, l.Task.Status)
 	}
 	b.WriteString(relationsHelp)
-	fmt.Fprintf(&b, "\n%s\n## Rules\n\n%s\n## Older history\n\nFull thread: `conveyor task show %s --thread --json`\n", statusBlock, rules(db, true), task.Key)
+	fmt.Fprintf(&b, "\n%s\n## Rules\n\n%s\n## Older history\n\nFull thread: `conveyor task show %s --thread --json`\n", statusBlock, rulesForTask(db, task, true), task.Key)
 	return b.String(), nil
 }
 

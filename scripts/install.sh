@@ -21,6 +21,9 @@ echo "==> CLI"
 mkdir -p "$BIN_DIR"
 GOBIN="$BIN_DIR" go install ./cmd/conveyor
 
+echo "==> Detecting agent runtimes"
+"$BIN_DIR/conveyor" detect --apply || true
+
 echo "==> App"
 wails build -clean
 git checkout -- frontend/dist/.gitkeep 2>/dev/null || true

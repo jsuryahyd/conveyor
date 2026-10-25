@@ -18,6 +18,7 @@ import (
 	"github.com/JayaSuryaOolio/conveyor/internal/core"
 	"github.com/JayaSuryaOolio/conveyor/internal/dispatch"
 	"github.com/JayaSuryaOolio/conveyor/internal/learning"
+	"github.com/JayaSuryaOolio/conveyor/internal/runner"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 	"github.com/JayaSuryaOolio/conveyor/internal/term"
 	"github.com/JayaSuryaOolio/conveyor/internal/workspace"
@@ -59,6 +60,9 @@ func (a *App) Startup(ctx context.Context) {
 		return
 	}
 	a.svc = &core.Service{DB: db, Home: home, Bin: conveyorBin()}
+	if picked, changed, err := runner.AutoConfigureDefaultRunner(db); err == nil && changed {
+		log.Printf("auto-configured default_runner to %s", picked)
+	}
 	a.startTerms()
 	automation.Bin = conveyorBin() // the cli automation kind runs the CLI, not the app binary
 	ctx, a.cancel = context.WithCancel(ctx)
@@ -386,27 +390,11 @@ func (a *App) SetTaskModel(key, model string) error { return a.svc.SetTaskModel(
 func (a *App) SetTaskRunner(key, runner string) error { return a.svc.SetTaskRunner(key, runner) }
 
 // CLIAgent represents a detected CLI agent/runner on the system.
-type CLIAgent struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Command   string `json:"command"`
-	Installed bool   `json:"installed"`
-	Path      string `json:"path"`
-}
+type CLIAgent = runner.CLIAgent
 
 // ListCLIAgents detects and returns the available CLI runner backends.
 func (a *App) ListCLIAgents() []CLIAgent {
-	agents := []CLIAgent{
-		{ID: "claude", Name: "Claude Code", Command: "claude"},
-		{ID: "agy", Name: "Antigravity", Command: "agy"},
-	}
-	for i := range agents {
-		if p, err := exec.LookPath(agents[i].Command); err == nil {
-			agents[i].Installed = true
-			agents[i].Path = p
-		}
-	}
-	return agents
+	return runner.DetectRunners()
 }
 
 // SetTaskDescription replaces a backlog task's description.
@@ -437,6 +425,10 @@ func (a *App) Learnings() ([]LearningRow, error) {
 		row := LearningRow{Learning: l}
 		if l.RepoID != nil {
 			row.Repo = names[*l.RepoID]
+		}
+		if row.Target == nil || *row.Target == "" {
+			t := learning.TargetForRepo(a.svc.DB, l.RepoID)
+			row.Target = &t
 		}
 		out = append(out, row)
 	}
