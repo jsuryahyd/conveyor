@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/JayaSuryaOolio/conveyor/internal/agy"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
 
@@ -50,5 +51,10 @@ func (s *Service) AddRepo(path, name string) (store.Repo, error) {
 	if name == "" {
 		name = filepath.Base(abs)
 	}
-	return store.AddRepo(s.DB, store.Repo{Name: name, Path: abs, DefaultBranch: branch})
+	r, err := store.AddRepo(s.DB, store.Repo{Name: name, Path: abs, DefaultBranch: branch})
+	if err != nil {
+		return r, err
+	}
+	_ = agy.AddTrustedWorkspaces(s.Home, abs)
+	return r, nil
 }

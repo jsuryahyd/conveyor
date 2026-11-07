@@ -585,3 +585,66 @@ cat ` + dir + `/$k.json 2>/dev/null || echo '[]'
 		t.Fatal(s)
 	}
 }
+
+func TestTrustedWorkspacesCLI(t *testing.T) {
+	home := t.TempDir()
+	userHome := t.TempDir()
+	t.Setenv("HOME", userHome)
+
+	repo := t.TempDir()
+	for _, args := range [][]string{{"init", "-b", "main"}, {"-c", "user.name=t", "-c", "user.email=t@t", "commit", "--allow-empty", "-m", "i"}} {
+		if b, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, b)
+		}
+	}
+	name := filepath.Base(repo)
+
+	// 1. conveyor repo add
+	cv(t, home, "repo", "add", repo)
+
+	settingsFile := filepath.Join(userHome, ".gemini", "antigravity-cli", "settings.json")
+	b, err := os.ReadFile(settingsFile)
+	if err != nil {
+		t.Fatalf("settings file not found: %v", err)
+	}
+	var cfg struct {
+		TrustedWorkspaces []string `json:"trustedWorkspaces"`
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	foundRepo := false
+	foundWorkspaces := false
+	foundGH := false
+	for _, p := range cfg.TrustedWorkspaces {
+		if p == repo {
+			foundRepo = true
+		}
+		if p == filepath.Join(home, "workspaces") || p == filepath.Join(userHome, ".conveyor", "workspaces") {
+			foundWorkspaces = true
+		}
+		if strings.HasSuffix(p, filepath.Join(".config", "gh")) {
+			foundGH = true
+		}
+	}
+	if !foundRepo || !foundWorkspaces || !foundGH {
+		t.Fatalf("trustedWorkspaces missing expected paths after repo add: %v", cfg.TrustedWorkspaces)
+	}
+
+	// 2. conveyor task new and task set --runner agy
+	cv(t, home, "task", "new", "Task1", "--repo", name)
+	cv(t, home, "task", "set", "CV-1", "--runner", "agy")
+	b, _ = os.ReadFile(settingsFile)
+	_ = json.Unmarshal(b, &cfg)
+	if len(cfg.TrustedWorkspaces) == 0 {
+		t.Fatal("trustedWorkspaces empty after task set --runner agy")
+	}
+
+	// 3. conveyor config set default_runner agy
+	cv(t, home, "config", "set", "default_runner", "agy")
+	b, _ = os.ReadFile(settingsFile)
+	_ = json.Unmarshal(b, &cfg)
+	if len(cfg.TrustedWorkspaces) == 0 {
+		t.Fatal("trustedWorkspaces empty after config set default_runner agy")
+	}
+}

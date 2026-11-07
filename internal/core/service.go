@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/JayaSuryaOolio/conveyor/internal/agy"
 	"github.com/JayaSuryaOolio/conveyor/internal/runner"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
@@ -154,13 +155,28 @@ func (s *Service) CreateTask(in NewTaskInput) (store.Task, error) {
 		}
 	}
 	created, err := store.CreateTask(s.DB, t, links)
-	if err != nil || !in.Epic {
+	if err != nil {
 		return created, err
 	}
-	if err := store.MakeEpic(s.DB, created.ID, cmp.Or(in.EpicName, strings.ToLower(created.Key))); err != nil {
-		return created, err
+	if in.Epic {
+		if err := store.MakeEpic(s.DB, created.ID, cmp.Or(in.EpicName, strings.ToLower(created.Key))); err != nil {
+			return created, err
+		}
 	}
-	return store.GetTask(s.DB, created.ID)
+	res, err := store.GetTask(s.DB, created.ID)
+	if err != nil {
+		return res, err
+	}
+	if in.Runner == "agy" || (in.Runner == "" && s.RunnerForTask(res).Name() == "agy") {
+		var roots []string
+		for _, tr := range res.Repos {
+			if repo, err := store.GetRepoByName(s.DB, tr.RepoName); err == nil {
+				roots = append(roots, repo.Path)
+			}
+		}
+		_ = s.TrustAgyWorkspaces(roots...)
+	}
+	return res, nil
 }
 
 // AfterMerge is what a comment does to a task with a merged PR.
@@ -387,6 +403,29 @@ func (s *Service) RunnerForTask(t store.Task) runner.Runner {
 	return runner.ForTask(taskRunner, store.GetSetting(s.DB, "default_runner"), s.Home)
 }
 
+// TrustAgyWorkspaces updates ~/.gemini/antigravity-cli/settings.json to add
+// repo roots (or all registered repos if none specified), workspaces, and ~/.config/gh.
+func (s *Service) TrustAgyWorkspaces(repoRoots ...string) error {
+	if len(repoRoots) == 0 {
+		repos, _ := store.ListRepos(s.DB)
+		for _, r := range repos {
+			repoRoots = append(repoRoots, r.Path)
+		}
+	}
+	return agy.AddTrustedWorkspaces(s.Home, repoRoots...)
+}
+
+// SetSetting stores one setting and applies side effects (e.g. updating trustedWorkspaces for agy runner).
+func (s *Service) SetSetting(k, v string) error {
+	if err := store.SetSetting(s.DB, k, v); err != nil {
+		return err
+	}
+	if k == "default_runner" && v == "agy" {
+		_ = s.TrustAgyWorkspaces()
+	}
+	return nil
+}
+
 // SetTaskRunner sets (or with "" clears) the task's runner override.
 func (s *Service) SetTaskRunner(key, runnerName string) error {
 	if err := runner.ValidateRunner(runnerName); err != nil {
@@ -397,7 +436,19 @@ func (s *Service) SetTaskRunner(key, runnerName string) error {
 		return err
 	}
 	t.Runner = optional(runnerName)
-	return store.UpdateTask(s.DB, t)
+	if err := store.UpdateTask(s.DB, t); err != nil {
+		return err
+	}
+	if runnerName == "agy" || (runnerName == "" && s.RunnerForTask(t).Name() == "agy") {
+		var roots []string
+		for _, tr := range t.Repos {
+			if repo, err := store.GetRepoByName(s.DB, tr.RepoName); err == nil {
+				roots = append(roots, repo.Path)
+			}
+		}
+		_ = s.TrustAgyWorkspaces(roots...)
+	}
+	return nil
 }
 
 // CleanupSessions stops and removes the task's background sessions (best effort).

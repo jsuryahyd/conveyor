@@ -442,7 +442,7 @@ func (a *App) SetRepoSetupScript(name, script string) error {
 func (a *App) GetSettings() (map[string]string, error) { return store.ListSettings(a.svc.DB), nil }
 
 // SetSetting stores one setting.
-func (a *App) SetSetting(k, v string) error { return store.SetSetting(a.svc.DB, k, v) }
+func (a *App) SetSetting(k, v string) error { return a.svc.SetSetting(k, v) }
 
 // ExportState saves the portable state (no repos) to a file the user picks and returns its path ("" if cancelled).
 func (a *App) ExportState() (string, error) {

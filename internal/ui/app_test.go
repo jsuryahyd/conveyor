@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/JayaSuryaOolio/conveyor/internal/agy"
 	"github.com/JayaSuryaOolio/conveyor/internal/core"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
@@ -132,5 +133,40 @@ func TestSetLabelSwapsPrefixOnly(t *testing.T) {
 	}
 	if a.SetLabel(key, "epic_kind", "") == nil {
 		t.Fatal("empty value accepted")
+	}
+}
+
+func TestApp_TrustsWorkspaces(t *testing.T) {
+	tmp := t.TempDir()
+	settingsFile := filepath.Join(tmp, "gemini-settings.json")
+	t.Setenv("CONVEYOR_AGY_SETTINGS", settingsFile)
+
+	a, _ := newApp(t)
+	a.svc.Home = filepath.Join(tmp, ".conveyor")
+
+	if err := a.SetSetting("default_runner", "agy"); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	trusted, err := agy.GetTrustedWorkspaces()
+	if err != nil {
+		t.Fatalf("GetTrustedWorkspaces: %v", err)
+	}
+
+	hasA := false
+	hasWorkspaces := false
+	for _, p := range trusted {
+		if p == "/x/a" {
+			hasA = true
+		}
+		if p == filepath.Join(a.svc.Home, "workspaces") {
+			hasWorkspaces = true
+		}
+	}
+	if !hasA {
+		t.Errorf("repo /x/a not in trusted: %v", trusted)
+	}
+	if !hasWorkspaces {
+		t.Errorf("workspaces not in trusted: %v", trusted)
 	}
 }
