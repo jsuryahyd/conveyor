@@ -7,7 +7,6 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 BIN_DIR=${BIN_DIR:-$HOME/.local/bin}
-APP_DIR=${APP_DIR:-/Applications}
 cv="$BIN_DIR/conveyor"
 
 if [ -x "$cv" ]; then
@@ -19,5 +18,13 @@ for d in skills/*/; do
 	rm -rf "$HOME/.claude/skills/$(basename "$d")"
 	rm -rf "$HOME/.gemini/config/skills/$(basename "$d")"
 done
-rm -rf "$APP_DIR/Conveyor.app" "$cv"
+
+if [ "$(uname)" = "Darwin" ]; then
+	APP_DIR=${APP_DIR:-/Applications}
+	rm -rf "$APP_DIR/Conveyor.app"
+else
+	APP_DIR=${APP_DIR:-$HOME/.local/share/applications}
+	rm -f "$BIN_DIR/Conveyor" "$APP_DIR/conveyor.desktop" "$APP_DIR/Conveyor"
+fi
+rm -f "$cv"
 echo "uninstalled; data kept in ${CONVEYOR_HOME:-$HOME/.conveyor}"
