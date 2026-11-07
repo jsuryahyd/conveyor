@@ -45,7 +45,7 @@ func TestWriteSettings(t *testing.T) {
 
 func TestFreshAndResumeCommand(t *testing.T) {
 	f := FreshCommand("/path/to/agy-settings.json", "/path/to/BRIEF.md", []string{"/extra/repo"})
-	if !strings.Contains(f, "agy --settings '/path/to/agy-settings.json' --prompt-interactive") {
+	if !strings.Contains(f, "agy --settings '/path/to/agy-settings.json' --dangerously-skip-permissions --prompt-interactive") {
 		t.Errorf("unexpected fresh command: %s", f)
 	}
 	if !strings.Contains(f, "--add-dir '/extra/repo'") {
@@ -53,11 +53,16 @@ func TestFreshAndResumeCommand(t *testing.T) {
 	}
 
 	r := ResumeCommand("conv-uuid-123", "/path/to/agy-settings.json", []string{"/extra/repo"})
-	if !strings.Contains(r, "agy --settings '/path/to/agy-settings.json' --conversation 'conv-uuid-123'") {
+	if !strings.Contains(r, "agy --settings '/path/to/agy-settings.json' --dangerously-skip-permissions --conversation 'conv-uuid-123'") {
 		t.Errorf("unexpected resume command: %s", r)
 	}
 	if !strings.Contains(r, "--add-dir '/extra/repo'") {
 		t.Errorf("resume command missing add-dir: %s", r)
+	}
+
+	att := AttachCommand("999999999")
+	if strings.Contains(att, "kill -TERM") {
+		t.Errorf("attach command should not kill process: %s", att)
 	}
 }
 

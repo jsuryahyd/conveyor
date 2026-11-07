@@ -40,7 +40,7 @@ function ActionRow({k, a, kind, onTerm}: {k: string; a: core.Action; kind?: stri
 function ActionIcons({k, a, kind, onTerm}: {k: string; a: core.Action; kind?: string; onTerm: (t: ui.TermInfo) => void}) {
     return (
         <>
-            <Group gap={2} wrap="nowrap">
+            <Group gap={2} wrap="nowrap" mr={6}>
                 <Tooltip label="Copy command">
                     <ActionIcon variant="default" size="sm" aria-label="Copy command" onClick={() => copy(cdCmd(a))}><IconCopy size={14}/></ActionIcon>
                 </Tooltip>
@@ -190,7 +190,7 @@ export function TaskSidebar({t, runs, reload, onTerm}: {t: store.Task; runs: sto
     const resume = new Map((actions ?? []).filter(a => /^(resume|attach):/.test(a.kind)).map(a => [a.kind.split(':')[1], a]))
     const hasWorktree = repos.some(r => r.worktree_path)
     return (
-        <Stack gap="sm" component="aside" miw={0}>
+        <Stack gap="sm" component="aside" miw={0} pr="xs">
             <Group justify="space-between" wrap="nowrap">
                 <Group gap={4}><Text size="sm" fw={600}>Agent</Text><TaskSettings k={k} model={t.model ?? ''} runner={t.runner ?? ''} reload={reload}/></Group>
                 <TaskAgent k={k} repos={repos.map(r => r.repo_name)} agent={t.agent ?? ''}/>
