@@ -31,7 +31,7 @@ func runConfig(home string, args []string) error {
 			fmt.Fprintln(out, store.GetSetting(s.DB, args[1]))
 			return nil
 		case args[0] == "set" && len(args) == 3:
-			return store.SetSetting(s.DB, args[1], args[2])
+			return s.SetSetting(args[1], args[2])
 		}
 		return fmt.Errorf("usage: conveyor config list | get k | set k v")
 	})

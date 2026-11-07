@@ -20,6 +20,7 @@ func NewAgyRunner(home string) Runner { return &AgyRunner{ConveyorHome: home} }
 func (a *AgyRunner) Name() string { return "agy" }
 
 func (a *AgyRunner) Launch(ctx context.Context, s LaunchSpec) (string, string, error) {
+	_ = agy.AddTrustedWorkspaces(a.ConveyorHome)
 	bgID, convID, err := agy.Launch(ctx, a.ConveyorHome, agy.LaunchSpec{
 		Cwd:          s.Cwd,
 		AddDirs:      s.AddDirs,
@@ -72,6 +73,7 @@ func (a *AgyRunner) FreshCommand(settingsPath, briefPath string, addDirs []strin
 }
 
 func (a *AgyRunner) WriteSettings(home, conveyorBin string) (string, error) {
+	_ = agy.AddTrustedWorkspaces(home)
 	return agy.WriteSettings(home, conveyorBin)
 }
 

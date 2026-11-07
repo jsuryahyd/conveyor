@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os/exec"
 
+	"github.com/JayaSuryaOolio/conveyor/internal/agy"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
 
@@ -75,6 +76,14 @@ func AutoConfigureDefaultRunner(db *sql.DB) (string, bool, error) {
 
 	if err := store.SetSetting(db, "default_runner", picked); err != nil {
 		return cur, false, err
+	}
+	if picked == "agy" {
+		repos, _ := store.ListRepos(db)
+		var roots []string
+		for _, r := range repos {
+			roots = append(roots, r.Path)
+		}
+		_ = agy.AddTrustedWorkspaces("", roots...)
 	}
 	return picked, true, nil
 }

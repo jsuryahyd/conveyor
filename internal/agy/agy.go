@@ -255,8 +255,7 @@ func FreshCommand(settingsPath, briefPath string, addDirs []string) string {
 // and adds Conveyor task configuration.
 func WriteSettings(home, conveyorBin string) (string, error) {
 	cfg := map[string]any{}
-	if h, err := os.UserHomeDir(); err == nil {
-		basePath := filepath.Join(h, ".gemini", "antigravity-cli", "settings.json")
+	if basePath, err := userSettingsPath(); err == nil {
 		if b, err := os.ReadFile(basePath); err == nil {
 			_ = json.Unmarshal(b, &cfg)
 		}

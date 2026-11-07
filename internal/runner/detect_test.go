@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/JayaSuryaOolio/conveyor/internal/agy"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
 
@@ -41,6 +42,8 @@ func TestAutoConfigureDefaultRunner(t *testing.T) {
 	defer func() { lookPath = oldLookPath }()
 
 	dir := t.TempDir()
+	settingsFile := filepath.Join(dir, "agy-settings.json")
+	t.Setenv("CONVEYOR_AGY_SETTINGS", settingsFile)
 	db, err := store.Open(filepath.Join(dir, "c.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +67,14 @@ func TestAutoConfigureDefaultRunner(t *testing.T) {
 	}
 	if got := store.GetSetting(db, "default_runner"); got != "agy" {
 		t.Fatalf("expected stored setting agy, got %s", got)
+	}
+
+	trusted, err := agy.GetTrustedWorkspaces()
+	if err != nil {
+		t.Fatalf("GetTrustedWorkspaces: %v", err)
+	}
+	if len(trusted) == 0 {
+		t.Fatalf("expected trusted workspaces to be populated")
 	}
 
 	// Case 2: second run with agy installed keeps agy without change.
