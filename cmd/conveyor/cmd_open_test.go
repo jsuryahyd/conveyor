@@ -28,7 +28,13 @@ func TestTaskOpenPrint(t *testing.T) {
 	}
 	db.Close()
 
-	if out := cv(t, home, "task", "open", tk.Key, "--print"); !strings.Contains(out, "osascript") || !strings.Contains(out, `cd '\''`+wt+`'\'' && :`) {
+	wantTerm := "osascript"
+	wantCd := `cd '\''` + wt + `'\'' && :`
+	if store.Defaults["terminal_template"] != "" && !strings.Contains(store.Defaults["terminal_template"], "osascript") {
+		wantTerm = "x-terminal-emulator"
+		wantCd = `cd '` + wt + `' && :`
+	}
+	if out := cv(t, home, "task", "open", tk.Key, "--print"); !strings.Contains(out, wantTerm) || !strings.Contains(out, wantCd) {
 		t.Fatal(out)
 	}
 	if out := cv(t, home, "task", "open", tk.Key, "--fresh", "--print"); !strings.Contains(out, "claude --settings") || !strings.Contains(out, "BRIEF.md") {

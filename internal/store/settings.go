@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"runtime"
 	"strings"
 )
 
@@ -11,6 +12,18 @@ import (
 var tokenPrefixes = map[string][]string{
 	"slack_app_token": {"xapp-", "xoxe.xapp-"},
 	"slack_bot_token": {"xoxb-"},
+}
+
+// DefaultTerminalTemplate returns the OS-specific terminal launch command template.
+func DefaultTerminalTemplate() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return `osascript -e 'tell application "Terminal" to do script "cd {cwd} && {cmd}"' -e 'tell application "Terminal" to activate'`
+	case "windows":
+		return `wt -d {cwd} cmd.exe /k {cmd}`
+	default: // linux, bsd, etc.
+		return `x-terminal-emulator -e sh -c "cd {cwd} && {cmd}; exec ${SHELL:-bash}" &`
+	}
 }
 
 // Defaults are the setting values used when a key is unset (tech-spec §5).
@@ -23,7 +36,7 @@ var Defaults = map[string]string{
 	"max_consecutive_failures": "3",
 	"default_model":            "",
 	"default_runner":           "claude", // "claude" or "agy"
-	"terminal_template":        `osascript -e 'tell application "Terminal" to do script "cd {cwd} && {cmd}"' -e 'tell application "Terminal" to activate'`,
+	"terminal_template":        DefaultTerminalTemplate(),
 	"brief_extra_rules":        "",
 	"prompt_fresh":             "",
 	"prompt_resume":            "",

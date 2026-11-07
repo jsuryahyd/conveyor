@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
 
 func TestRenderPlain(t *testing.T) {
@@ -35,7 +33,8 @@ func TestOpenOsascript(t *testing.T) {
 	}
 	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
 	cwd, cmd := `/my dir/it's "q" $x`, `claude 'a b' "c"`
-	if err := Open(store.Defaults["terminal_template"], cwd, cmd); err != nil {
+	macTemplate := `osascript -e 'tell application "Terminal" to do script "cd {cwd} && {cmd}"' -e 'tell application "Terminal" to activate'`
+	if err := Open(macTemplate, cwd, cmd); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(log)

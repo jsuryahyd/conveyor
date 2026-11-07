@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"runtime"
 )
 
 const schema = `
@@ -237,7 +238,20 @@ func Migrate(db *sql.DB) error {
 	if err := migrateAddRunWaste(db); err != nil {
 		return err
 	}
+	if err := migrateTerminalTemplate(db); err != nil {
+		return err
+	}
 	return migrateAddAutomationOneShot(db)
+}
+
+// migrateTerminalTemplate replaces hardcoded macOS osascript templates with the OS default on non-macOS systems.
+func migrateTerminalTemplate(db *sql.DB) error {
+	if runtime.GOOS == "darwin" {
+		return nil
+	}
+	macTemplate := `osascript -e 'tell application "Terminal" to do script "cd {cwd} && {cmd}"' -e 'tell application "Terminal" to activate'`
+	_, err := db.Exec(`UPDATE settings SET value=? WHERE key='terminal_template' AND value=?`, DefaultTerminalTemplate(), macTemplate)
+	return err
 }
 
 // migrateAddRunWaste adds the runs waste counts; older runs read 0.
