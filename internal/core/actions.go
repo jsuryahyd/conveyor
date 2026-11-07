@@ -140,14 +140,7 @@ func (s *Service) Actions(key string) ([]Action, error) {
 	switch {
 	case err != nil:
 	case isActive(run) && run.BgID != nil:
-		cmd := bgRunner.AttachCommand(*run.BgID)
-		if run.SessionID != nil && *run.SessionID != "" {
-			cmd = bgRunner.ResumeCommand(*run.SessionID, settings, workspace.OtherPaths(t))
-			if bgRunner.Name() == "agy" {
-				cmd = "kill -TERM " + *run.BgID + " 2>/dev/null; " + cmd
-			}
-		}
-		out = append(out, Action{"Attach to session", primary, cwd, cmd, "attach"})
+		out = append(out, Action{"Attach to session", primary, cwd, bgRunner.AttachCommand(*run.BgID), "attach"})
 	case !isActive(run) && run.SessionID != nil:
 		out = append(out, Action{"Resume in terminal", primary, cwd, bgRunner.ResumeCommand(*run.SessionID, settings, workspace.OtherPaths(t)), "resume"})
 	}
@@ -174,14 +167,7 @@ func (s *Service) Actions(key string) ([]Action, error) {
 		case !isActive(r):
 			out = append(out, Action{fmt.Sprintf("Resume run #%d", i+1), primary, cwd, bgRunner.ResumeCommand(*r.SessionID, settings, workspace.OtherPaths(t)), "resume:" + id})
 		case r.BgID != nil: // a run that is not the latest, e.g. blocked on a question, still needs its attach icon
-			cmd := bgRunner.AttachCommand(*r.BgID)
-			if r.SessionID != nil && *r.SessionID != "" {
-				cmd = bgRunner.ResumeCommand(*r.SessionID, settings, workspace.OtherPaths(t))
-				if bgRunner.Name() == "agy" {
-					cmd = "kill -TERM " + *r.BgID + " 2>/dev/null; " + cmd
-				}
-			}
-			out = append(out, Action{fmt.Sprintf("Attach to run #%d", i+1), primary, cwd, cmd, "attach:" + id})
+			out = append(out, Action{fmt.Sprintf("Attach to run #%d", i+1), primary, cwd, bgRunner.AttachCommand(*r.BgID), "attach:" + id})
 		}
 	}
 	return out, nil

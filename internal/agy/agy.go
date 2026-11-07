@@ -21,6 +21,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -214,11 +215,30 @@ func q(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
-// AttachCommand returns a command to stop the background process and attach interactively.
+// AttachCommand returns a command to attach to a background agy session.
+// Rather than halting/killing the background session, it streams the session output
+// and then drops into an interactive agy conversation with --dangerously-skip-permissions.
 func AttachCommand(bgID string) string {
 	if pid, err := strconv.Atoi(bgID); err == nil {
-		if convID := DetectConversationID(pid); convID != "" {
-			return "kill -TERM " + bgID + " 2>/dev/null; agy --conversation " + q(convID)
+		convID := DetectConversationID(pid)
+		if IsPIDRunning(pid) {
+			logPath := ""
+			if target, err := os.Readlink(fmt.Sprintf("/proc/%d/fd/1", pid)); err == nil && target != "" {
+				logPath = target
+			}
+			if logPath != "" {
+				if runtime.GOOS == "linux" {
+					tailCmd := fmt.Sprintf("tail -n +1 -f --pid=%s %s", bgID, q(logPath))
+					if convID != "" {
+						return fmt.Sprintf("%s; agy --dangerously-skip-permissions --conversation %s", tailCmd, q(convID))
+					}
+					return tailCmd
+				}
+				return fmt.Sprintf("tail -n +1 -f %s", q(logPath))
+			}
+		}
+		if convID != "" {
+			return "agy --dangerously-skip-permissions --conversation " + q(convID)
 		}
 	}
 	return "echo 'Conveyor: agy runner (PID " + bgID + ") attach not available'"
@@ -230,6 +250,7 @@ func ResumeCommand(sessionID, settingsPath string, addDirs []string) string {
 	if settingsPath != "" {
 		c += " --settings " + q(settingsPath)
 	}
+	c += " --dangerously-skip-permissions"
 	c += " --conversation " + q(sessionID)
 	for _, d := range addDirs {
 		c += " --add-dir " + q(d)
@@ -243,6 +264,7 @@ func FreshCommand(settingsPath, briefPath string, addDirs []string) string {
 	if settingsPath != "" {
 		c += " --settings " + q(settingsPath)
 	}
+	c += " --dangerously-skip-permissions"
 	c += " --prompt-interactive " + q("Read "+briefPath+" first, then wait for my instructions.")
 	for _, d := range addDirs {
 		c += " --add-dir " + q(d)

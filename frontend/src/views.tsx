@@ -290,7 +290,7 @@ export function TaskPage({k, nav, height = 'calc(100vh - 2 * var(--mantine-spaci
         // Only the thread scrolls: the comment box, sidebar and terminal dock stay put.
         <TaskKey.Provider value={t.key}>
         <Box style={{display: 'flex', flexDirection: 'column', height}}>
-        <Box style={{flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: `minmax(0, 1fr) ${side ? '300px' : 'auto'}`, gap: side ? 'var(--mantine-spacing-xl)' : 'var(--mantine-spacing-xs)'}}>
+        <Box style={{flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: `minmax(0, 1fr) ${side ? '320px' : 'auto'}`, gap: side ? 'var(--mantine-spacing-xl)' : 'var(--mantine-spacing-xs)'}}>
             <Stack gap="sm" mih={0}>
                 <Group justify="space-between" wrap="nowrap" style={{flex: 'none'}}>
                 <Breadcrumbs style={{flex: 'none', flexWrap: 'nowrap'}}>
@@ -334,8 +334,8 @@ export function TaskPage({k, nav, height = 'calc(100vh - 2 * var(--mantine-spaci
                 </ScrollBox>
                 <Box style={{flex: 'none'}}><CommentBox k={t.key} onDone={reload} restored={restored}/></Box>
             </Stack>
-            <Box mih={0} style={{overflowY: 'auto'}}>
-                <Group justify="flex-end" mb={4}>
+            <Box mih={0} className="sidebar-scroll" pr="xs" style={{overflowY: 'auto', scrollbarGutter: 'stable'}}>
+                <Group justify="flex-end" mb={4} pr="xs">
                     <ActionIcon variant="subtle" color="gray" aria-label={side ? 'Hide details' : 'Show details'} title={side ? 'Hide details' : 'Show details'} onClick={() => setSide(!side)}>
                         {side ? <IconLayoutSidebarRightCollapse size={18}/> : <IconLayoutSidebarRightExpand size={18}/>}
                     </ActionIcon>

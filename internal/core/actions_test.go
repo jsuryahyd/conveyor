@@ -121,3 +121,27 @@ func TestActionsUseBin(t *testing.T) {
 		t.Fatalf("hooks do not call Bin: %s", b)
 	}
 }
+
+func TestActionsAgyAttach(t *testing.T) {
+	s := newSvc(t)
+	tk := actionTask(t, s)
+	agyRunner := "agy"
+	tk.Runner = &agyRunner
+	store.UpdateTask(s.DB, tk)
+
+	bg, sess := "999999", "conv-uuid-456"
+	_, _ = store.CreateRun(s.DB, store.Run{TaskID: tk.ID, Kind: "auto", Mode: "fresh", Status: "running", BgID: &bg, SessionID: &sess})
+	as, err := s.Actions(tk.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var attachCmd string
+	for _, a := range as {
+		if a.Kind == "attach" {
+			attachCmd = a.Cmd
+		}
+	}
+	if strings.Contains(attachCmd, "kill -TERM") {
+		t.Fatalf("agy attach should not kill process: %s", attachCmd)
+	}
+}
