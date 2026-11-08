@@ -1,10 +1,11 @@
 import {lazy, Ref, Suspense, useEffect, useRef, useState} from 'react'
-import {ActionIcon, Anchor, Badge, Box, Breadcrumbs, Button, CloseButton, Code, CopyButton, Divider, Group, Kbd, Paper, Popover, Stack, Text, TextInput, Timeline, Title, Tooltip} from '@mantine/core'
+import {ActionIcon, Alert, Anchor, Badge, Box, Breadcrumbs, Button, CloseButton, Code, CopyButton, Divider, Group, Kbd, Paper, Popover, Stack, Text, TextInput, Timeline, Title, Tooltip} from '@mantine/core'
 import {useLocalStorage} from '@mantine/hooks'
 import {IconAbc, IconSitemap, IconArrowDown, IconArrowUp, IconClock, IconFlame, IconHash, IconPencil, IconSearch, IconTerminal, IconX, IconLayoutSidebarRightCollapse, IconLayoutSidebarRightExpand, IconMessage, IconPlayerPlay} from '@tabler/icons-react'
 import {Actions, GetTask, ListTasks, RunLog, SetTaskDescription, Stop, TakeQueuedComment, TermStart} from '../wailsjs/go/ui/App'
 import {core, store, ui} from '../wailsjs/go/models'
 import {Card, CommentBox, Message, Nav, StatusBadge, Time, View, errMsg} from './components'
+import {TaskModel} from './forms'
 import {Markdown, MarkdownEditor, TaskKey} from './markdown'
 import {Relations} from './relations'
 import {TaskSidebar} from './workspace'
@@ -271,6 +272,7 @@ export function TaskPage({k, nav, height = 'calc(100vh - 2 * var(--mantine-spaci
     const [titleGone, setTitleGone] = useState(false)
     // A question is answered in the session itself: needs_you offers a way into the live session's terminal.
     const needsYou = d?.task.status === 'needs_you'
+    const modelIssue = needsYou && d.comments.some(c => c.author === 'system' && (c.body.includes('invalid model') || c.body.includes('unknown model') || c.body.includes('failed at startup') || c.body.includes('session failed')))
     const {data: actions} = useData(() => needsYou ? Actions(k) : Promise.resolve([]), [k, needsYou, d?.runs.length])
     const attach = actions?.find(a => a.kind === 'attach')
     const answer = attach && <Button size="compact-sm" leftSection={<IconTerminal size={14}/>} onClick={() => TermStart(k, 'attach', attach.repo).then(setAdded).catch(errMsg)}>Answer in terminal</Button>
@@ -310,6 +312,14 @@ export function TaskPage({k, nav, height = 'calc(100vh - 2 * var(--mantine-spaci
                         <WatchedTitle onGone={setTitleGone}>{t.title}</WatchedTitle>
                         <Description t={t} reload={reload}/>
                         <Relations k={t.key} status={t.status} rel={d.relations} nav={nav} reload={reload}/>
+                        {modelIssue && (
+                            <Alert color="orange" title="Session launch failed">
+                                <Text size="xs" mb="xs">The agent failed to launch. Check or change the model override below, then comment to retry:</Text>
+                                <Group>
+                                    <TaskModel k={t.key} runner={t.runner ?? ''} model={t.model ?? ''} reload={reload}/>
+                                </Group>
+                            </Alert>
+                        )}
                         {latest?.criteria && <><Title order={5}>Acceptance criteria</Title><Criteria text={latest.criteria}/></>}
                         <Title order={5}>Thread</Title>
                         <Timeline bulletSize={24} lineWidth={2}>

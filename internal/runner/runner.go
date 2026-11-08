@@ -25,7 +25,7 @@ type Runner interface {
 	// Launch starts a fresh background session and returns the bg id and session id (if immediately known).
 	Launch(ctx context.Context, s LaunchSpec) (bgID string, sessionID string, err error)
 	// Resume continues session sessionID (stopping bgID first) and returns the new bg id.
-	Resume(ctx context.Context, cwd, bgID, sessionID, settingsPath, prompt string, addDirs []string) (string, error)
+	Resume(ctx context.Context, s ResumeSpec) (string, error)
 	// Stop signals the background session to stop.
 	Stop(ctx context.Context, bgID string) error
 	// Remove removes / cleans up the background session record.
@@ -56,6 +56,19 @@ type LaunchSpec struct {
 	Agent        string
 	MCPConfig    string
 	Bypass       bool // skip permission prompts (auto runs)
+}
+
+// ResumeSpec describes resuming an existing session, backend-agnostic.
+type ResumeSpec struct {
+	TaskKey      string
+	Cwd          string
+	BgID         string
+	SessionID    string
+	SettingsPath string
+	Prompt       string
+	AddDirs      []string
+	Model        string
+	Agent        string
 }
 
 // ForTask returns the appropriate Runner for a task, given the task's runner

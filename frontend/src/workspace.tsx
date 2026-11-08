@@ -6,7 +6,7 @@ import {Actions, AddLabel, AddTaskRepo, CheckReviews, EnsureWorkspace, GetSettin
 import {core, store, ui} from '../wailsjs/go/models'
 import {BrowserOpenURL} from '../wailsjs/runtime/runtime'
 import {PlacedButtons, StatusSelect, Time, errMsg} from './components'
-import {TaskAgent, TaskSettings} from './forms'
+import {TaskAgent, TaskModel, TaskRunner, TaskSettings} from './forms'
 import {useData} from './util'
 
 /** Confirmation popup: renders while `msg` is set; run `ok` on confirm, `close` on cancel. */
@@ -194,6 +194,14 @@ export function TaskSidebar({t, runs, reload, onTerm}: {t: store.Task; runs: sto
             <Group justify="space-between" wrap="nowrap">
                 <Group gap={4}><Text size="sm" fw={600}>Agent</Text><TaskSettings k={k} model={t.model ?? ''} runner={t.runner ?? ''} reload={reload}/></Group>
                 <TaskAgent k={k} repos={repos.map(r => r.repo_name)} agent={t.agent ?? ''}/>
+            </Group>
+            <Group justify="space-between" wrap="nowrap">
+                <Text size="sm" fw={600}>Model</Text>
+                <TaskModel k={k} runner={t.runner ?? ''} model={t.model ?? ''} reload={reload}/>
+            </Group>
+            <Group justify="space-between" wrap="nowrap">
+                <Text size="sm" fw={600}>Runner</Text>
+                <TaskRunner k={k} runner={t.runner ?? ''}/>
             </Group>
             <Group justify="space-between">
                 <Text size="sm" fw={600}>Status</Text>

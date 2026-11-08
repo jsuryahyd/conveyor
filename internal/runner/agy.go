@@ -34,11 +34,17 @@ func (a *AgyRunner) Launch(ctx context.Context, s LaunchSpec) (string, string, e
 	return bgID, convID, err
 }
 
-func (a *AgyRunner) Resume(ctx context.Context, cwd, bgID, sessionID, settingsPath, prompt string, addDirs []string) (string, error) {
-	return agy.Resume(ctx, a.ConveyorHome, cwd, bgID, sessionID, settingsPath, prompt, addDirs, agy.LaunchSpec{
-		Cwd:          cwd,
-		Name:         taskKeyFromBgID(bgID),
-		SettingsPath: settingsPath,
+func (a *AgyRunner) Resume(ctx context.Context, s ResumeSpec) (string, error) {
+	name := s.TaskKey
+	if name == "" {
+		name = taskKeyFromBgID(s.BgID)
+	}
+	return agy.Resume(ctx, a.ConveyorHome, s.Cwd, s.BgID, s.SessionID, s.SettingsPath, s.Prompt, s.AddDirs, agy.LaunchSpec{
+		Cwd:          s.Cwd,
+		Name:         name,
+		SettingsPath: s.SettingsPath,
+		Model:        s.Model,
+		Agent:        s.Agent,
 		Bypass:       true,
 	})
 }

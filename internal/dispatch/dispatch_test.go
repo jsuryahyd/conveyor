@@ -585,6 +585,52 @@ func TestReapFollowsResumedSessionID(t *testing.T) {
 	}
 }
 
+func TestReapAgyModelErrorComment(t *testing.T) {
+	e := setup(t)
+	tk := e.task(t, "t", 0)
+	agy := "agy"
+	tk.Runner = &agy
+	_ = store.SetTaskRunner(e.db, tk.ID, &agy)
+	_, _ = store.UpdateTaskStatus(e.db, tk.ID, store.StatusRunning, store.ActorSystem)
+
+	bg := "99999999" // non-existent PID, not running
+	_, _ = store.CreateRun(e.db, store.Run{
+		TaskID:    tk.ID,
+		Kind:      "auto",
+		Mode:      "fresh",
+		Status:    "running",
+		BgID:      &bg,
+		StartedAt: time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339),
+	})
+
+	// Create agy log with error output
+	logDir := filepath.Join(e.d.Home, "agy-logs")
+	_ = os.MkdirAll(logDir, 0o755)
+	logContent := "error: invalid model selection (--model \"sonnet\" --effort \"\"): model sonnet is not recognized as a known model or custom model in settings\nAvailable models:\n  Gemini 3.8 Flash (High)\n"
+	_ = os.WriteFile(filepath.Join(logDir, tk.Key+".log"), []byte(logContent), 0o644)
+
+	e.now = time.Now()
+	if err := e.d.reap(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	task, _ := store.GetTask(e.db, tk.ID)
+	if task.Status != store.StatusNeedsYou {
+		t.Fatalf("expected status needs_you, got %s", task.Status)
+	}
+	comments, _ := store.ListComments(e.db, tk.ID)
+	found := false
+	for _, c := range comments {
+		if strings.Contains(c.Body, "invalid model selection") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected comment with error message, got: %+v", comments)
+	}
+}
+
 // endedRun records a finished run of the task at the given time.
 func (e *env) endedRun(t *testing.T, task store.Task, at time.Time) {
 	t.Helper()

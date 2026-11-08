@@ -44,3 +44,20 @@ func TestBgLogPath(t *testing.T) {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
+
+func TestResumeSpecTaskKeyLogPath(t *testing.T) {
+	spec := ResumeSpec{
+		TaskKey: "CV-10",
+		BgID:    "12345",
+	}
+	name := spec.TaskKey
+	if name == "" {
+		name = taskKeyFromBgID(spec.BgID)
+	}
+	if name != "CV-10" {
+		t.Errorf("got %q, want CV-10", name)
+	}
+	if BgLogPath("/conveyor", name) != "/conveyor/agy-logs/CV-10.log" {
+		t.Errorf("expected aligned log path for CV-10")
+	}
+}

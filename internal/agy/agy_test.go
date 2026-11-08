@@ -116,3 +116,49 @@ func TestMockLaunch(t *testing.T) {
 		t.Fatal("expected non-empty pid")
 	}
 }
+
+func TestSanitizeAgyModel(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{"sonnet", "claude-sonnet-4-6"},
+		{"claude-sonnet-5-5", "claude-sonnet-4-6"},
+		{"opus", "claude-opus-4-6-thinking"},
+		{"claude-opus-5-5", "claude-opus-4-6-thinking"},
+		{"haiku", "gemini-3.8-flash-medium"},
+		{"flash", "gemini-3.8-flash-medium"},
+		{"gemini-3.8-flash-high", "gemini-3.8-flash-high"},
+		{"", ""},
+	} {
+		if got := sanitizeAgyModel(tc.in); got != tc.want {
+			t.Errorf("sanitizeAgyModel(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSanitizeAgyAgentContent(t *testing.T) {
+	inSonnet := []byte("---\nname: my-agent\nmodel: sonnet\n---\nPrompt text here\n")
+	gotSonnet := string(sanitizeAgyAgentContent(inSonnet))
+	if !strings.Contains(gotSonnet, "model: pro") {
+		t.Errorf("expected model: pro in %q", gotSonnet)
+	}
+
+	inHaiku := []byte("---\nname: my-agent\nmodel: haiku\n---\nPrompt text here\n")
+	gotHaiku := string(sanitizeAgyAgentContent(inHaiku))
+	if !strings.Contains(gotHaiku, "model: flash") {
+		t.Errorf("expected model: flash in %q", gotHaiku)
+	}
+
+	inInherit := []byte("---\nname: my-agent\nmodel: inherit\n---\nPrompt text here\n")
+	gotInherit := string(sanitizeAgyAgentContent(inInherit))
+	if string(inInherit) != gotInherit {
+		t.Errorf("expected unchanged inherit, got %q", gotInherit)
+	}
+
+	inInvalid := []byte("---\nname: my-agent\nmodel: custom-xyz\n---\nPrompt text here\n")
+	gotInvalid := string(sanitizeAgyAgentContent(inInvalid))
+	if !strings.Contains(gotInvalid, "model: inherit") {
+		t.Errorf("expected model: inherit in %q", gotInvalid)
+	}
+}
