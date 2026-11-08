@@ -159,6 +159,9 @@ func TestSanitizeAgyAgentContent(t *testing.T) {
 	if !strings.Contains(gotSonnet, "model: pro") {
 		t.Errorf("expected model: pro in %q", gotSonnet)
 	}
+	if !strings.Contains(gotSonnet, "tools: [read_file, edit_file, write_file, run_command, manage_task, search_web]") {
+		t.Errorf("expected injected tools in %q", gotSonnet)
+	}
 
 	inHaiku := []byte("---\nname: my-agent\nmodel: haiku\n---\nPrompt text here\n")
 	gotHaiku := string(sanitizeAgyAgentContent(inHaiku))
@@ -166,15 +169,27 @@ func TestSanitizeAgyAgentContent(t *testing.T) {
 		t.Errorf("expected model: flash in %q", gotHaiku)
 	}
 
-	inInherit := []byte("---\nname: my-agent\nmodel: inherit\n---\nPrompt text here\n")
+	inInherit := []byte("---\nname: my-agent\nmodel: inherit\ntools: [read_file, edit_file, write_file, run_command, manage_task, search_web]\n---\nPrompt text here\n")
 	gotInherit := string(sanitizeAgyAgentContent(inInherit))
 	if string(inInherit) != gotInherit {
 		t.Errorf("expected unchanged inherit, got %q", gotInherit)
+	}
+
+	inClaudeTools := []byte("---\nname: my-agent\nmodel: sonnet\ntools: [Bash, Read, Write, Edit]\n---\nPrompt text here\n")
+	gotClaudeTools := string(sanitizeAgyAgentContent(inClaudeTools))
+	if !strings.Contains(gotClaudeTools, "tools: [run_command, manage_task, read_file, write_file, edit_file]") {
+		t.Errorf("expected mapped claude tools in %q", gotClaudeTools)
 	}
 
 	inInvalid := []byte("---\nname: my-agent\nmodel: custom-xyz\n---\nPrompt text here\n")
 	gotInvalid := string(sanitizeAgyAgentContent(inInvalid))
 	if !strings.Contains(gotInvalid, "model: inherit") {
 		t.Errorf("expected model: inherit in %q", gotInvalid)
+	}
+}
+
+func TestEnsureAllAgentsSanitized(t *testing.T) {
+	if err := EnsureAllAgentsSanitized(); err != nil {
+		t.Fatal(err)
 	}
 }

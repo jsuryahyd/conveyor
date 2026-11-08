@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/JayaSuryaOolio/conveyor/internal/agy"
 	"github.com/JayaSuryaOolio/conveyor/internal/claude"
 	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
@@ -69,6 +70,7 @@ func (s *Service) ListAgents(repos []string) ([]Agent, error) {
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 
+	_ = agy.EnsureAllAgentsSanitized()
 	userAgents := scanAgents(userAgentsDir(), "user")
 	userSeen := map[string]bool{}
 	for _, a := range userAgents {

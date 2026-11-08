@@ -92,10 +92,58 @@ func sanitizeAgyModel(m string) string {
 	return m
 }
 
-var agentModelLineRe = regexp.MustCompile(`(?m)^model:\s*(.+)$`)
+var (
+	agentModelLineRe = regexp.MustCompile(`(?m)^model:\s*(.+)$`)
+	agentToolsLineRe = regexp.MustCompile(`(?m)^tools:\s*(.+)$`)
+)
+
+func mapClaudeToolsToAgy(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(raw, "[")
+	raw = strings.TrimSuffix(raw, "]")
+	parts := strings.Split(raw, ",")
+	seen := make(map[string]bool)
+	var out []string
+
+	add := func(t string) {
+		t = strings.TrimSpace(t)
+		if !seen[t] && t != "" {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+
+	for _, p := range parts {
+		item := strings.Trim(strings.TrimSpace(p), `"'`)
+		switch strings.ToLower(item) {
+		case "bash":
+			add("run_command")
+			add("manage_task")
+		case "read", "glob", "grep":
+			add("read_file")
+		case "edit", "multiedit":
+			add("edit_file")
+		case "write":
+			add("write_file")
+		case "websearch", "webfetch":
+			add("search_web")
+		default:
+			if item != "" {
+				add(item)
+			}
+		}
+	}
+
+	if len(out) == 0 {
+		return []string{"read_file", "edit_file", "write_file", "run_command", "manage_task", "search_web"}
+	}
+	return out
+}
 
 // sanitizeAgyAgentContent adjusts Claude agent markdown frontmatter for Antigravity:
-// replaces incompatible model: lines with model: inherit (or pro/flash).
+// 1. Replaces incompatible model: lines with model: inherit (or pro/flash).
+// 2. Ensures tools: is present with native Antigravity tools (including run_command/bash),
+//    since agy restricts agents with no tools line to a minimal read-only set.
 func sanitizeAgyAgentContent(b []byte) []byte {
 	s := string(b)
 	trimmed := strings.TrimLeft(s, "\r\n\t ")
@@ -108,28 +156,43 @@ func sanitizeAgyAgentContent(b []byte) []byte {
 		return b
 	}
 	header := rest[:idx]
+
+	// 1. Sanitize model if present
 	loc := agentModelLineRe.FindStringSubmatchIndex(header)
-	if loc == nil {
-		return b
+	if loc != nil {
+		val := strings.TrimSpace(header[loc[2]:loc[3]])
+		mapped := "inherit"
+		switch val {
+		case "inherit", "flash_lite", "flash", "pro":
+			mapped = val
+		default:
+			switch strings.ToLower(val) {
+			case "sonnet", "opus", "claude-sonnet-4-6", "claude-opus-4-6-thinking":
+				mapped = "pro"
+			case "haiku":
+				mapped = "flash"
+			default:
+				mapped = "inherit"
+			}
+		}
+		header = header[:loc[0]] + "model: " + mapped + header[loc[1]:]
 	}
-	val := strings.TrimSpace(header[loc[2]:loc[3]])
-	switch val {
-	case "inherit", "flash_lite", "flash", "pro":
-		return b // already valid in agy
+
+	// 2. Sanitize or inject tools so agy agents always have bash (run_command) and write capabilities
+	toolsLoc := agentToolsLineRe.FindStringSubmatchIndex(header)
+	if toolsLoc != nil {
+		rawTools := header[toolsLoc[2]:toolsLoc[3]]
+		mappedTools := mapClaudeToolsToAgy(rawTools)
+		header = header[:toolsLoc[0]] + "tools: [" + strings.Join(mappedTools, ", ") + "]" + header[toolsLoc[1]:]
+	} else {
+		// agy defaults custom agents with no tools line to a minimal read-only set.
+		// Grant standard developer tools including run_command (bash).
+		header = strings.TrimRight(header, "\r\n") + "\ntools: [read_file, edit_file, write_file, run_command, manage_task, search_web]\n"
 	}
-	mapped := "inherit"
-	switch strings.ToLower(val) {
-	case "sonnet", "opus", "claude-sonnet-4-6", "claude-opus-4-6-thinking":
-		mapped = "pro"
-	case "haiku":
-		mapped = "flash"
-	default:
-		mapped = "inherit"
-	}
-	newHeader := header[:loc[0]] + "model: " + mapped + header[loc[1]:]
+
 	prefix := s[:len(s)-len(trimmed)] + "---"
 	suffix := rest[idx:]
-	return []byte(prefix + newHeader + suffix)
+	return []byte(prefix + header + suffix)
 }
 
 // ensureAgyAgentAvailable ensures that an agent defined in ~/.claude/agents/<name>.md
@@ -157,6 +220,39 @@ func ensureAgyAgentAvailable(name string) {
 	}
 	_ = os.MkdirAll(filepath.Dir(geminiAgent), 0o755)
 	_ = os.WriteFile(geminiAgent, sanitized, 0o644)
+}
+
+// EnsureAllAgentsSanitized ensures all agents in ~/.gemini/config/agents and ~/.claude/agents
+// are configured with valid agy models and native tools (including run_command).
+func EnsureAllAgentsSanitized() error {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	geminiDir := filepath.Join(h, ".gemini", "config", "agents")
+	claudeDir := filepath.Join(h, ".claude", "agents")
+	_ = os.MkdirAll(geminiDir, 0o755)
+
+	files := make(map[string]bool)
+	if gEntries, err := os.ReadDir(geminiDir); err == nil {
+		for _, e := range gEntries {
+			if strings.HasSuffix(e.Name(), ".md") {
+				files[strings.TrimSuffix(e.Name(), ".md")] = true
+			}
+		}
+	}
+	if cEntries, err := os.ReadDir(claudeDir); err == nil {
+		for _, e := range cEntries {
+			if strings.HasSuffix(e.Name(), ".md") {
+				files[strings.TrimSuffix(e.Name(), ".md")] = true
+			}
+		}
+	}
+
+	for name := range files {
+		ensureAgyAgentAvailable(name)
+	}
+	return nil
 }
 
 // Launch starts `agy --print ...` as a detached OS process, writing its output to
