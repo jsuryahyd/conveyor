@@ -250,13 +250,26 @@ func AgentModel(name string, dirs ...string) string {
 }
 
 // SetTaskAgent sets (or with "" clears) the task's agent.
+// When the agent changes, existing session IDs on the task are cleared so that
+// subsequent runs start a fresh session with the new agent persona and toolset.
 func (s *Service) SetTaskAgent(key, agent string) error {
 	t, err := store.GetTaskByKey(s.DB, key)
 	if err != nil {
 		return err
 	}
-	t.Agent = optional(agent)
-	return store.UpdateTask(s.DB, t)
+	oldAgent := ""
+	if t.Agent != nil {
+		oldAgent = *t.Agent
+	}
+	newAgent := strings.TrimSpace(agent)
+	if oldAgent != newAgent {
+		t.Agent = optional(newAgent)
+		if err := store.UpdateTask(s.DB, t); err != nil {
+			return err
+		}
+		return store.ClearTaskSessionIDs(s.DB, t.ID)
+	}
+	return nil
 }
 
 // SetTaskModel sets (or with "" clears) the task's model override.

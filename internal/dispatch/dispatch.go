@@ -324,6 +324,7 @@ func (d *Dispatcher) reapAgy(ctx context.Context, r store.Run, task store.Task, 
 
 	ended := d.now().UTC().Format(time.RFC3339)
 	r.Status, r.EndedAt = "finished", &ended
+	r.SessionID = nil
 	if err := store.UpdateRun(d.DB, r); err != nil {
 		return err
 	}
@@ -663,6 +664,7 @@ func (d *Dispatcher) fail(task store.Task, run store.Run, cause error) error {
 	if run.ID != 0 {
 		ended := d.now().UTC().Format(time.RFC3339)
 		run.Status, run.Error, run.EndedAt = "failed", ptr(cause.Error()), &ended
+		run.SessionID = nil
 		if err := store.UpdateRun(d.DB, run); err != nil {
 			return err
 		}

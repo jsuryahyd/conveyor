@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+func TestDetectConversationID_NoForeignAdoption(t *testing.T) {
+	// Point HOME to a temp directory with a presence lock file
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	presenceDir := filepath.Join(fakeHome, ".gemini", "antigravity-cli", "presence")
+	_ = os.MkdirAll(presenceDir, 0o755)
+	foreignLock := filepath.Join(presenceDir, "11111111-2222-3333-4444-555555555555.lock")
+	_ = os.WriteFile(foreignLock, nil, 0o644)
+
+	// A non-existent or immediately failed PID must NOT adopt the foreign lockfile
+	got := DetectConversationID(99999999)
+	if got != "" {
+		t.Fatalf("expected empty conversation ID for dead PID, but got adopted foreign ID %q", got)
+	}
+}
+
 func TestExtractConversationID(t *testing.T) {
 	out := `Some header
 Conversation ID: 12345678-1234-1234-1234-123456789abc

@@ -47,6 +47,29 @@ func TestAgents(t *testing.T) {
 	if tk.Agent == nil || *tk.Agent != "rev-1" {
 		t.Fatalf("%+v", tk.Agent)
 	}
+
+	// Add a run with session_id to tk
+	sessID := "conv-123"
+	r, err := store.CreateRun(s.DB, store.Run{TaskID: tk.ID, Kind: "auto", Mode: "fresh", Status: "finished", SessionID: &sessID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SessionID == nil || *r.SessionID != "conv-123" {
+		t.Fatal("session not set on run")
+	}
+
+	if err := s.SetTaskAgent(tk.Key, "other-agent"); err != nil {
+		t.Fatal(err)
+	}
+	if tk, _ = store.GetTaskByKey(s.DB, tk.Key); tk.Agent == nil || *tk.Agent != "other-agent" {
+		t.Fatal("agent not updated")
+	}
+	// Verify session IDs were cleared on runs
+	runs, _ := store.ListRuns(s.DB, tk.ID)
+	if len(runs) != 1 || runs[0].SessionID != nil {
+		t.Fatalf("expected session_id to be cleared on runs after agent change, got %+v", runs)
+	}
+
 	if err := s.SetTaskAgent(tk.Key, ""); err != nil {
 		t.Fatal(err)
 	}

@@ -211,25 +211,6 @@ func DetectConversationID(pid int) string {
 			}
 		}
 	}
-	// Fallback: check ~/.gemini/antigravity-cli/presence for recent locks
-	if h, err := os.UserHomeDir(); err == nil {
-		presenceDir := filepath.Join(h, ".gemini", "antigravity-cli", "presence")
-		if files, err := os.ReadDir(presenceDir); err == nil {
-			var newest string
-			var newestTime time.Time
-			for _, f := range files {
-				if strings.HasSuffix(f.Name(), ".lock") {
-					if info, err := f.Info(); err == nil && info.ModTime().After(newestTime) {
-						newestTime = info.ModTime()
-						newest = strings.TrimSuffix(f.Name(), ".lock")
-					}
-				}
-			}
-			if time.Since(newestTime) < 10*time.Second {
-				return newest
-			}
-		}
-	}
 	return ""
 }
 
