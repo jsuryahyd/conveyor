@@ -324,6 +324,7 @@ func (d *Dispatcher) reapAgy(ctx context.Context, r store.Run, task store.Task, 
 
 	ended := d.now().UTC().Format(time.RFC3339)
 	r.Status, r.EndedAt = "finished", &ended
+	r.SessionID = nil
 	if err := store.UpdateRun(d.DB, r); err != nil {
 		return err
 	}
@@ -331,6 +332,18 @@ func (d *Dispatcher) reapAgy(ctx context.Context, r store.Run, task store.Task, 
 		return nil
 	}
 	note := "The agy session exited without a status block."
+	if strings.Contains(logOutput, "error:") || strings.Contains(logOutput, "Error:") {
+		var errLines []string
+		for _, l := range strings.Split(logOutput, "\n") {
+			trimmed := strings.TrimSpace(l)
+			if strings.HasPrefix(strings.ToLower(trimmed), "error:") || strings.HasPrefix(trimmed, "Available models:") {
+				errLines = append(errLines, trimmed)
+			}
+		}
+		if len(errLines) > 0 {
+			note = fmt.Sprintf("The agy session failed at startup:\n```\n%s\n```\nCheck the task's model or runner and comment to retry.", strings.Join(errLines, "\n"))
+		}
+	}
 	if _, err := store.AddComment(d.DB, store.Comment{TaskID: task.ID, Author: store.AuthorSystem, Body: note}); err != nil {
 		return err
 	}
@@ -515,7 +528,17 @@ func (d *Dispatcher) start(ctx context.Context, task store.Task, delta []store.C
 	}
 	var bg, sessionID string
 	if prev != nil {
-		bg, err = bgRunner.Resume(ctx, cwd, deref(prev.BgID), deref(prev.SessionID), settings, run.Prompt, workspace.OtherPaths(task))
+		bg, err = bgRunner.Resume(ctx, runner.ResumeSpec{
+			TaskKey:      task.Key,
+			Cwd:          cwd,
+			BgID:         deref(prev.BgID),
+			SessionID:    deref(prev.SessionID),
+			SettingsPath: settings,
+			Prompt:       run.Prompt,
+			AddDirs:      workspace.OtherPaths(task),
+			Model:        d.model(task),
+			Agent:        deref(task.Agent),
+		})
 		sessionID = deref(prev.SessionID)
 	} else {
 		bg, sessionID, err = bgRunner.Launch(ctx, d.spec(task, cwd, settings, run.Prompt))
@@ -641,6 +664,7 @@ func (d *Dispatcher) fail(task store.Task, run store.Run, cause error) error {
 	if run.ID != 0 {
 		ended := d.now().UTC().Format(time.RFC3339)
 		run.Status, run.Error, run.EndedAt = "failed", ptr(cause.Error()), &ended
+		run.SessionID = nil
 		if err := store.UpdateRun(d.DB, run); err != nil {
 			return err
 		}

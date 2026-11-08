@@ -1,10 +1,15 @@
 package core
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/JayaSuryaOolio/conveyor/internal/store"
 )
 
 func TestModelsBuiltinFallback(t *testing.T) {
@@ -65,5 +70,82 @@ func TestModelsFromAPI(t *testing.T) {
 	t.Setenv("ANTHROPIC_API_KEY", "bad") // API error: fall back to the builtin list
 	if ml := (&Service{}).Models(); ml.Source != "builtin" {
 		t.Fatalf("bad key: %+v", ml)
+	}
+}
+
+func TestRunnerModelsAgy(t *testing.T) {
+	// 1. Builtin agy models
+	oldCmd := detectAgyModelsCmd
+	defer func() { detectAgyModelsCmd = oldCmd }()
+	detectAgyModelsCmd = func(_ context.Context) ([]byte, error) {
+		return nil, fmt.Errorf("agy not available")
+	}
+
+	s := &Service{}
+	ml := s.RunnerModels("agy")
+	if ml.Source != "builtin" || ml.Runner != "agy" {
+		t.Fatalf("expected builtin agy models, got %+v", ml)
+	}
+	if len(ml.Models) != len(builtinAgyModels) {
+		t.Fatalf("got %d models, want %d", len(ml.Models), len(builtinAgyModels))
+	}
+
+	// Test Resolve on agy models
+	if r := ml.Resolve("sonnet"); r != "claude-sonnet-4-6" {
+		t.Errorf("Resolve(sonnet) = %q, want claude-sonnet-4-6", r)
+	}
+	if r := ml.Resolve("opus"); r != "claude-opus-4-6-thinking" {
+		t.Errorf("Resolve(opus) = %q, want claude-opus-4-6-thinking", r)
+	}
+	if r := ml.Resolve("flash"); r != "gemini-3.8-flash-medium" {
+		t.Errorf("Resolve(flash) = %q, want gemini-3.8-flash-medium", r)
+	}
+	if r := ml.Resolve("Gemini 3.8 Flash (High)"); r != "gemini-3.8-flash-high" {
+		t.Errorf("Resolve(Gemini 3.8 Flash (High)) = %q, want gemini-3.8-flash-high", r)
+	}
+	if r := ml.Resolve("gemini-3.8-flash-low"); r != "gemini-3.8-flash-low" {
+		t.Errorf("Resolve(gemini-3.8-flash-low) = %q, want gemini-3.8-flash-low", r)
+	}
+
+	// 2. Simulated agy models CLI detection
+	detectAgyModelsCmd = func(_ context.Context) ([]byte, error) {
+		return []byte("gemini-3.8-flash-medium   Gemini 3.8 Flash (Medium)\nclaude-sonnet-4-6         Claude Sonnet 4.6 (Thinking)\n"), nil
+	}
+	ml = s.RunnerModels("agy")
+	if ml.Source != "api" || len(ml.Models) != 2 {
+		t.Fatalf("expected api detected agy models, got %+v", ml)
+	}
+	if ml.Models[0].ID != "gemini-3.8-flash-medium" || ml.Models[0].Name != "Gemini 3.8 Flash (Medium)" {
+		t.Errorf("detected model 0 = %+v", ml.Models[0])
+	}
+}
+
+func TestSetRunnerModels(t *testing.T) {
+	db, err := store.Open(filepath.Join(t.TempDir(), "c.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	s := &Service{DB: db}
+
+	// Custom agy models setting
+	if err := s.SetRunnerModels("agy", []string{"custom-model-1", "custom-model-2:Custom Two"}); err != nil {
+		t.Fatal(err)
+	}
+	ml := s.RunnerModels("agy")
+	if ml.Source != "setting" || len(ml.Models) != 2 {
+		t.Fatalf("expected setting source, got %+v", ml)
+	}
+	if ml.Models[0].ID != "custom-model-1" || ml.Models[1].Name != "Custom Two" {
+		t.Errorf("models = %+v", ml.Models)
+	}
+
+	// Reset
+	if err := s.ResetRunnerModels("agy"); err != nil {
+		t.Fatal(err)
+	}
+	ml = s.RunnerModels("agy")
+	if ml.Source == "setting" {
+		t.Fatalf("expected non-setting source after reset, got %+v", ml)
 	}
 }

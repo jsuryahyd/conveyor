@@ -29,8 +29,8 @@ func (c *ClaudeRunner) Launch(ctx context.Context, s LaunchSpec) (string, string
 	return bgID, "", err
 }
 
-func (c *ClaudeRunner) Resume(ctx context.Context, cwd, bgID, sessionID, settingsPath, prompt string, addDirs []string) (string, error) {
-	return claude.Resume(ctx, cwd, bgID, sessionID, settingsPath, prompt, addDirs)
+func (c *ClaudeRunner) Resume(ctx context.Context, s ResumeSpec) (string, error) {
+	return claude.Resume(ctx, s.Cwd, s.BgID, s.SessionID, s.SettingsPath, s.Prompt, s.AddDirs)
 }
 
 func (c *ClaudeRunner) Stop(ctx context.Context, bgID string) error {

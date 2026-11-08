@@ -353,6 +353,7 @@ func taskSet(s *core.Service, args []string) error {
 	branch := fs.String("branch", "", "worktree branch (only before the worktree exists)")
 	pr := fs.String("pr", "", "PR URL (empty clears it)")
 	model := fs.String("model", "", "model override (empty clears it); see `conveyor models`")
+	agent := fs.String("agent", "", "agent override (empty clears it); see `conveyor agent list`")
 	runner := fs.String("runner", "", "runner override (claude, agy; empty resets to default)")
 	desc := fs.String("desc", "", "description; once a run saw the old one, a system comment quotes it for the next run")
 	descFile := fs.String("desc-file", "", "read the description from a file")
@@ -361,7 +362,7 @@ func taskSet(s *core.Service, args []string) error {
 		return err
 	}
 	if len(pos) != 1 {
-		return fmt.Errorf("usage: conveyor task set KEY [--repo r] [--branch b] [--pr url] [--model m] [--runner r] [--desc d | --desc-file f]")
+		return fmt.Errorf("usage: conveyor task set KEY [--repo r] [--branch b] [--pr url] [--model m] [--agent a] [--runner r] [--desc d | --desc-file f]")
 	}
 	given := map[string]bool{}
 	fs.Visit(func(f *flag.Flag) { given[f.Name] = true })
@@ -382,16 +383,21 @@ func taskSet(s *core.Service, args []string) error {
 			return err
 		}
 	}
+	if given["agent"] {
+		if err := s.SetTaskAgent(pos[0], *agent); err != nil {
+			return err
+		}
+	}
 	if given["runner"] {
 		if err := s.SetTaskRunner(pos[0], *runner); err != nil {
 			return err
 		}
 	}
 	if !given["branch"] && !given["pr"] {
-		if given["model"] || given["desc"] || given["runner"] {
+		if given["model"] || given["agent"] || given["desc"] || given["runner"] {
 			return nil
 		}
-		return fmt.Errorf("nothing to set: pass --branch, --pr, --model, --runner and/or --desc")
+		return fmt.Errorf("nothing to set: pass --branch, --pr, --model, --agent, --runner and/or --desc")
 	}
 	t, err := store.GetTaskByKey(s.DB, pos[0])
 	if err != nil {

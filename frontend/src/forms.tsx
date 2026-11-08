@@ -1,7 +1,7 @@
 import {useState} from 'react'
 import {ActionIcon, Button, Checkbox, Code, Group, Modal, MultiSelect, PasswordInput, ScrollArea, SegmentedControl, Select, SelectProps, Stack, Table, Tabs, Text, TextInput, Textarea, Title, Tooltip} from '@mantine/core'
 import {IconAdjustments} from '@tabler/icons-react'
-import {AddRepo, CreateTask, ExportState, GetPromptDefaults, GetTask, GetSettings, ImportState, ListAgents, ListCLIAgents, ListModels, ListRepos, ListTasks, PreviewBrief, SetRepoSetupScript, SetSetting, SetTaskAgent, SetTaskModel, SetTaskRunner} from '../wailsjs/go/ui/App'
+import {AddRepo, CreateTask, ExportState, GetPromptDefaults, GetTask, GetSettings, ImportState, ListAgents, ListCLIAgents, ListModels, ListRunnerModels, ListRepos, ListTasks, PreviewBrief, SetRepoSetupScript, SetSetting, SetTaskAgent, SetTaskModel, SetTaskRunner} from '../wailsjs/go/ui/App'
 import {core, store} from '../wailsjs/go/models'
 import {Nav, errMsg} from './components'
 import {Markdown, MarkdownEditor} from './markdown'
@@ -47,9 +47,9 @@ export function NewTask({nav, close}: {nav: Nav; close: () => void}) {
                 <MultiSelect label="Repos" placeholder="Pick repos" description={repos?.length === 0 ? 'Add one on the Repos page first' : undefined}
                              data={repos?.map(r => r.name) ?? []} value={sel} onChange={setSel}/>
                 {sel.length > 1 && <Select label="Primary repo" allowDeselect={false} data={sel} value={prim} onChange={v => setPrimary(v ?? '')}/>}
-                <ModelSelect value={model} onChange={setModel}/>
-                <AgentSelect repos={sel} value={agent} onChange={setAgent}/>
                 <RunnerSelect value={runner} onChange={setRunner}/>
+                <ModelSelect runner={runner} value={model} onChange={setModel}/>
+                <AgentSelect repos={sel} value={agent} onChange={setAgent}/>
                 <Checkbox label="Start now (todo)" checked={start} onChange={e => setStart(e.currentTarget.checked)}/>
                 <Checkbox label="Epic" checked={epic} onChange={e => setEpic(e.currentTarget.checked)}/>
                 {epic && <TextInput label="Epic name" placeholder="default: the lower-cased task key" value={epicName} onChange={e => setEpicName(e.target.value)}/>}
@@ -98,33 +98,47 @@ export function RunnerSettingSelect({value, onChange, ...rest}: {value: string; 
     return <Select aria-label="Default runner" allowDeselect={false} {...rest} value={value} onChange={v => onChange(v ?? '')} data={runners}/>
 }
 
-let modelsP: Promise<core.ModelList> | undefined
-const listModels = () => modelsP ??= ListModels()
+const runnerModelsCache = new Map<string, Promise<core.ModelList>>()
+const listRunnerModels = (runner?: string) => {
+    const key = runner ?? ''
+    let p = runnerModelsCache.get(key)
+    if (!p) {
+        p = key ? ListRunnerModels(key) : ListModels()
+        runnerModelsCache.set(key, p)
+    }
+    return p
+}
 
 /** Model choice; "" means the default (task: the agent's or default_model setting). A value not in the list is kept as an option. */
-export function ModelSelect({value, onChange, ...rest}: {value: string; onChange: (m: string) => void} & Omit<SelectProps, 'value' | 'onChange' | 'data'>) {
-    const {data: ml} = useData(listModels, [])
+export function ModelSelect({runner, value, onChange, ...rest}: {runner?: string; value: string; onChange: (m: string) => void} & Omit<SelectProps, 'value' | 'onChange' | 'data'>) {
+    const {data: ml} = useData(() => listRunnerModels(runner), [runner ?? ''])
     const ms = ml?.models ?? []
-    const known = !value || ms.some(m => m.id === value || m.id.replace(/-\d{8}$/, '') === value || (m.latest && m.tier === value))
+    const known = !value || ms.some(m => m.id === value || m.id.replace(/-\d{8}$/, '') === value || (m.latest && m.tier === value) || (m.name && m.name === value))
     const data = [{value: '', label: 'Default'},
-        ...ms.filter(m => m.latest).map(m => ({value: m.tier, label: `${m.tier} (latest: ${m.id})`})),
-        ...ms.map(m => ({value: m.id, label: m.id})),
+        ...ms.filter(m => m.latest && m.tier && m.tier !== m.id).map(m => ({value: m.tier, label: `${m.tier} (latest: ${m.name || m.id})`})),
+        ...ms.map(m => ({value: m.id, label: m.name && m.name !== m.id ? `${m.id} (${m.name})` : m.id})),
         ...(known ? [] : [{value, label: value}])]
     return <Select aria-label="Model" allowDeselect={false} searchable {...rest} value={value} onChange={v => onChange(v ?? '')} data={data}/>
 }
 
+export function TaskModel({k, runner, model, reload}: {k: string; runner?: string; model: string; reload?: () => void}) {
+    return <ModelSelect size="xs" runner={runner} value={model} onChange={m => SetTaskModel(k, m).then(reload, errMsg)}/>
+}
+
 export function TaskSettings({k, model, runner, reload}: {k: string; model: string; runner?: string; reload: () => void}) {
     const [open, setOpen] = useState(false)
+    const [curRunner, setCurRunner] = useState(runner ?? '')
+    const [curModel, setCurModel] = useState(model)
     return <>
         <Tooltip label="More settings">
-            <ActionIcon variant="subtle" color="gray" aria-label="More settings" onClick={() => setOpen(true)}><IconAdjustments size={16}/></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" aria-label="More settings" onClick={() => { setCurRunner(runner ?? ''); setCurModel(model); setOpen(true) }}><IconAdjustments size={16}/></ActionIcon>
         </Tooltip>
         <Modal opened={open} onClose={() => setOpen(false)} title={`${k} settings`} size="sm">
             <Stack gap="sm">
-                <ModelSelect label="Model" value={model} onChange={m => SetTaskModel(k, m).then(reload, errMsg)}/>
-                <Text size="xs" c="dimmed">Used from the next run. Default: the agent's model, else the default_model setting.</Text>
-                <RunnerSelect label="Runner" value={runner ?? ''} onChange={r => SetTaskRunner(k, r).then(reload, errMsg)}/>
+                <RunnerSelect label="Runner" value={curRunner} onChange={r => { setCurRunner(r); SetTaskRunner(k, r).then(reload, errMsg) }}/>
                 <Text size="xs" c="dimmed">Used from the next run. Default: the default_runner setting.</Text>
+                <ModelSelect label="Model" runner={curRunner} value={curModel} onChange={m => { setCurModel(m); SetTaskModel(k, m).then(reload, errMsg) }}/>
+                <Text size="xs" c="dimmed">Used from the next run. Default: the agent's model, else the default_model setting.</Text>
             </Stack>
         </Modal>
     </>
@@ -167,8 +181,10 @@ const TABS: {name: string; fields: Field[]}[] = [
     {name: "General", fields: [
         {k: "user_name", label: "Your name", desc: "Shown as the creator of tasks you create. Empty shows \"human\"."},
         {k: "key_prefix", label: "Task key prefix", desc: "Prefix for new task keys, e.g. CV gives CV-12."},
-        {k: "default_model", label: "Default model", desc: "Model for runs that do not set one. Default uses the Claude Code default.", kind: "model"},
         {k: "default_runner", label: "Default runner", desc: "Runner backend for tasks that do not set one (claude, agy).", kind: "runner"},
+        {k: "default_model", label: "Default model", desc: "Model for runs that do not set one. Default uses the runner default.", kind: "model"},
+        {k: "models_claude", label: "Custom Claude models", desc: "Comma-separated model IDs for Claude runner (empty auto-detects via Anthropic API / built-in)."},
+        {k: "models_agy", label: "Custom Antigravity models", desc: "Comma-separated model IDs for Antigravity runner (empty auto-detects via agy models / built-in)."},
     ]},
     {name: "Dispatch", fields: [
         {k: "max_parallel", label: "Max parallel runs", desc: "How many tasks run at once."},
@@ -205,7 +221,7 @@ export function Settings() {
                     {TABS.map(t => (
                         <Tabs.Panel key={t.name} value={t.name}>
                             <Stack>
-                                {(t.name === "General" ? [...t.fields, ...extra] : t.fields).map(f => <SettingRow key={f.k} f={f} v={data[f.k] ?? ""} reload={reload} ph={f.k === "prompt_fresh" ? defs?.fresh : f.k === "prompt_resume" ? defs?.resume : undefined}/>)}
+                                {(t.name === "General" ? [...t.fields, ...extra] : t.fields).map(f => <SettingRow key={f.k} f={f} v={data[f.k] ?? ""} reload={reload} runner={f.k === "default_model" ? data.default_runner : undefined} ph={f.k === "prompt_fresh" ? defs?.fresh : f.k === "prompt_resume" ? defs?.resume : undefined}/>)}
                                 {t.name === "General" && <StateButtons reload={reload}/>}
                                 {t.name === "Prompts" && <PromptsInfo settings={data} protocol={defs?.protocol ?? ""}/>}
                             </Stack>
@@ -234,7 +250,7 @@ function StateButtons({reload}: {reload: () => void}) {
     )
 }
 
-export function SettingRow({f, v, ph, reload}: {f: Field; v: string; ph?: string; reload: () => void}) {
+export function SettingRow({f, v, ph, reload, runner}: {f: Field; v: string; ph?: string; reload: () => void; runner?: string}) {
     const [val, setVal] = useState(v)
     const props = {style: {flex: 1}, label: f.label, description: f.desc, placeholder: ph}
     return (
@@ -243,7 +259,7 @@ export function SettingRow({f, v, ph, reload}: {f: Field; v: string; ph?: string
                 <Text size="sm" fw={500}>{f.label}</Text><Text size="xs" c="dimmed">{f.desc}</Text>
                 <MarkdownEditor minRows={4} value={val} onChange={setVal}/>
             </Stack>
-                : f.kind === "model" ? <ModelSelect {...props} value={val} onChange={setVal}/>
+                : f.kind === "model" ? <ModelSelect {...props} runner={runner} value={val} onChange={setVal}/>
                 : f.kind === "runner" ? <RunnerSettingSelect {...props} value={val} onChange={setVal}/>
                 : f.kind === "secret" ? <PasswordInput {...props} value={val} onChange={e => setVal(e.target.value)}/>
                 : f.kind === "area" ? <Textarea {...props} autosize minRows={2} maxRows={10} value={val} onChange={e => setVal(e.target.value)}/>

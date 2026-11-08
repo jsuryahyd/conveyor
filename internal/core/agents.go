@@ -189,9 +189,47 @@ func (s *Service) SetAgentModel(scope, name, model string) error {
 		if b, err = setFrontmatterModel(b, model); err != nil {
 			return err
 		}
-		return os.WriteFile(f, b, 0o644)
+		if err := os.WriteFile(f, b, 0o644); err != nil {
+			return err
+		}
+		if scope == "user" {
+			syncAgyUserAgentModel(name, model)
+		}
+		return nil
 	}
 	return fmt.Errorf("agent %q not found in %s", name, scope)
+}
+
+func mapAgySubagentModel(m string) string {
+	switch strings.ToLower(strings.TrimSpace(m)) {
+	case "sonnet", "opus", "claude-sonnet-4-6", "claude-opus-4-6-thinking":
+		return "pro"
+	case "haiku":
+		return "flash"
+	case "flash", "flash_lite", "pro", "inherit":
+		return strings.ToLower(strings.TrimSpace(m))
+	default:
+		return "inherit"
+	}
+}
+
+func syncAgyUserAgentModel(name, model string) {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	geminiAgent := filepath.Join(h, ".gemini", "config", "agents", name+".md")
+	gb, err := os.ReadFile(geminiAgent)
+	if err != nil {
+		return
+	}
+	geminiModel := ""
+	if model != "" {
+		geminiModel = mapAgySubagentModel(model)
+	}
+	if newGB, err := setFrontmatterModel(gb, geminiModel); err == nil {
+		_ = os.WriteFile(geminiAgent, newGB, 0o644)
+	}
 }
 
 // AgentModel returns the model set by the named agent's file, looking in each dir's .claude/agents, then the user's. "" if none.
@@ -212,13 +250,26 @@ func AgentModel(name string, dirs ...string) string {
 }
 
 // SetTaskAgent sets (or with "" clears) the task's agent.
+// When the agent changes, existing session IDs on the task are cleared so that
+// subsequent runs start a fresh session with the new agent persona and toolset.
 func (s *Service) SetTaskAgent(key, agent string) error {
 	t, err := store.GetTaskByKey(s.DB, key)
 	if err != nil {
 		return err
 	}
-	t.Agent = optional(agent)
-	return store.UpdateTask(s.DB, t)
+	oldAgent := ""
+	if t.Agent != nil {
+		oldAgent = *t.Agent
+	}
+	newAgent := strings.TrimSpace(agent)
+	if oldAgent != newAgent {
+		t.Agent = optional(newAgent)
+		if err := store.UpdateTask(s.DB, t); err != nil {
+			return err
+		}
+		return store.ClearTaskSessionIDs(s.DB, t.ID)
+	}
+	return nil
 }
 
 // SetTaskModel sets (or with "" clears) the task's model override.

@@ -265,6 +265,31 @@ func TestResumeVsFresh(t *testing.T) {
 	}
 }
 
+func TestAgentChangeClearsSessionTriggersFresh(t *testing.T) {
+	e := setup(t)
+	tk := e.task(t, "t", 0)
+	svc := &core.Service{DB: e.db, Home: e.d.Home}
+	sess, bg := "sess-1", "oldbg001"
+	r, _ := store.CreateRun(e.db, store.Run{TaskID: tk.ID, Kind: "auto", Mode: "fresh", Status: "finished", SessionID: &sess, BgID: &bg, CtxPeak: 1000})
+
+	// Changing agent clears session IDs
+	if err := svc.SetTaskAgent(tk.Key, "code-reviewer"); err != nil {
+		t.Fatal(err)
+	}
+
+	store.AddComment(e.db, store.Comment{TaskID: tk.ID, Author: store.AuthorHuman, Body: "please continue"})
+	e.now = time.Now().Add(time.Minute)
+	e.tick(t)
+
+	run, err := store.LatestRun(e.db, tk.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.ID == r.ID || run.Mode != "fresh" {
+		t.Fatalf("expected new fresh run, got mode=%s runID=%d", run.Mode, run.ID)
+	}
+}
+
 func TestMaxParallel(t *testing.T) {
 	e := setup(t)
 	store.SetSetting(e.db, "max_parallel", "1")
@@ -582,6 +607,52 @@ func TestReapFollowsResumedSessionID(t *testing.T) {
 	}
 	if got, _ := store.GetRun(e.db, r.ID); got.Status != "running" || *got.SessionID != "sess-new" {
 		t.Fatalf("run %+v", got)
+	}
+}
+
+func TestReapAgyModelErrorComment(t *testing.T) {
+	e := setup(t)
+	tk := e.task(t, "t", 0)
+	agy := "agy"
+	tk.Runner = &agy
+	_ = store.SetTaskRunner(e.db, tk.ID, &agy)
+	_, _ = store.UpdateTaskStatus(e.db, tk.ID, store.StatusRunning, store.ActorSystem)
+
+	bg := "99999999" // non-existent PID, not running
+	_, _ = store.CreateRun(e.db, store.Run{
+		TaskID:    tk.ID,
+		Kind:      "auto",
+		Mode:      "fresh",
+		Status:    "running",
+		BgID:      &bg,
+		StartedAt: time.Now().Add(-5 * time.Minute).UTC().Format(time.RFC3339),
+	})
+
+	// Create agy log with error output
+	logDir := filepath.Join(e.d.Home, "agy-logs")
+	_ = os.MkdirAll(logDir, 0o755)
+	logContent := "error: invalid model selection (--model \"sonnet\" --effort \"\"): model sonnet is not recognized as a known model or custom model in settings\nAvailable models:\n  Gemini 3.8 Flash (High)\n"
+	_ = os.WriteFile(filepath.Join(logDir, tk.Key+".log"), []byte(logContent), 0o644)
+
+	e.now = time.Now()
+	if err := e.d.reap(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	task, _ := store.GetTask(e.db, tk.ID)
+	if task.Status != store.StatusNeedsYou {
+		t.Fatalf("expected status needs_you, got %s", task.Status)
+	}
+	comments, _ := store.ListComments(e.db, tk.ID)
+	found := false
+	for _, c := range comments {
+		if strings.Contains(c.Body, "invalid model selection") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected comment with error message, got: %+v", comments)
 	}
 }
 

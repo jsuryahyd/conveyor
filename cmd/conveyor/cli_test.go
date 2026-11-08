@@ -191,6 +191,25 @@ func TestCLIModels(t *testing.T) {
 			t.Fatalf("missing %q:\n%s", want, out)
 		}
 	}
+
+	// Test models for runner agy
+	agyOut := cv(t, home, "models", "--runner", "agy")
+	if !strings.Contains(agyOut, "gemini-3.8-flash-high") || !strings.Contains(agyOut, "claude-sonnet-4-6") {
+		t.Fatalf("missing agy models in output:\n%s", agyOut)
+	}
+
+	// Test models set and reset
+	cv(t, home, "models", "set", "custom-1", "custom-2", "--runner", "agy")
+	setOut := cv(t, home, "models", "--runner", "agy")
+	if !strings.Contains(setOut, "custom-1") || !strings.Contains(setOut, "(source: setting)") {
+		t.Fatalf("expected custom models in output:\n%s", setOut)
+	}
+
+	cv(t, home, "models", "reset", "--runner", "agy")
+	resetOut := cv(t, home, "models", "--runner", "agy")
+	if strings.Contains(resetOut, "custom-1") || strings.Contains(resetOut, "(source: setting)") {
+		t.Fatalf("expected reset models in output:\n%s", resetOut)
+	}
 }
 
 func TestReviewWebhookCLI(t *testing.T) {

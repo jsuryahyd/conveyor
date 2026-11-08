@@ -545,8 +545,21 @@ func (a *App) SetAgentModel(scope, name, model string) error {
 	return a.svc.SetAgentModel(scope, name, model)
 }
 
-// ListModels returns the Claude models the pickers offer.
+// ListModels returns the models the pickers offer for the default runner.
 func (a *App) ListModels() core.ModelList { return a.svc.Models() }
+
+// ListRunnerModels returns the models supported by the specified runner.
+func (a *App) ListRunnerModels(runner string) core.ModelList { return a.svc.RunnerModels(runner) }
+
+// SetRunnerModels sets custom models for a runner backend.
+func (a *App) SetRunnerModels(runner string, models []string) error {
+	return a.svc.SetRunnerModels(runner, models)
+}
+
+// ResetRunnerModels clears custom models for a runner backend.
+func (a *App) ResetRunnerModels(runner string) error {
+	return a.svc.ResetRunnerModels(runner)
+}
 
 // ListSkills lists the skills the cards' skill pickers offer for the given repos.
 func (a *App) ListSkills(repos []string) []core.Command { return a.svc.ListSkills(repos) }

@@ -104,3 +104,9 @@ func ListRuns(db *sql.DB, taskID int64) ([]Run, error) {
 func ActiveRuns(db *sql.DB) ([]Run, error) {
 	return queryRuns(db, `status IN ('launching','running') ORDER BY id`)
 }
+
+// ClearTaskSessionIDs sets session_id to NULL on all runs of a task so future launches start fresh.
+func ClearTaskSessionIDs(db *sql.DB, taskID int64) error {
+	_, err := db.Exec(`UPDATE runs SET session_id = NULL WHERE task_id = ?`, taskID)
+	return err
+}

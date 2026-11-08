@@ -59,7 +59,7 @@ func (s LaunchSpec) args() []string {
 		a = append(a, "--dangerously-skip-permissions")
 	}
 	if s.Model != "" {
-		a = append(a, "--model", s.Model)
+		a = append(a, "--model", sanitizeAgyModel(s.Model))
 	}
 	if s.Agent != "" {
 		ensureAgyAgentAvailable(s.Agent)
@@ -71,24 +71,92 @@ func (s LaunchSpec) args() []string {
 	return a
 }
 
+// sanitizeAgyModel maps Claude model aliases to Antigravity model identifiers so
+// agy does not exit with code 1 due to unrecognized model flags.
+func sanitizeAgyModel(m string) string {
+	m = strings.TrimSpace(m)
+	if m == "" {
+		return ""
+	}
+	lower := strings.ToLower(m)
+	switch {
+	case lower == "sonnet" || strings.HasPrefix(lower, "claude-sonnet") || strings.HasPrefix(lower, "claude-3-5-sonnet") || strings.HasPrefix(lower, "claude-3-7-sonnet"):
+		return "claude-sonnet-4-6"
+	case lower == "opus" || strings.HasPrefix(lower, "claude-opus") || strings.HasPrefix(lower, "claude-3-opus"):
+		return "claude-opus-4-6-thinking"
+	case lower == "haiku" || strings.HasPrefix(lower, "claude-haiku") || strings.HasPrefix(lower, "claude-3-5-haiku"):
+		return "gemini-3.8-flash-medium"
+	case lower == "flash":
+		return "gemini-3.8-flash-medium"
+	}
+	return m
+}
+
+var agentModelLineRe = regexp.MustCompile(`(?m)^model:\s*(.+)$`)
+
+// sanitizeAgyAgentContent adjusts Claude agent markdown frontmatter for Antigravity:
+// replaces incompatible model: lines with model: inherit (or pro/flash).
+func sanitizeAgyAgentContent(b []byte) []byte {
+	s := string(b)
+	trimmed := strings.TrimLeft(s, "\r\n\t ")
+	if !strings.HasPrefix(trimmed, "---") {
+		return b
+	}
+	rest := trimmed[3:]
+	idx := strings.Index(rest, "---")
+	if idx == -1 {
+		return b
+	}
+	header := rest[:idx]
+	loc := agentModelLineRe.FindStringSubmatchIndex(header)
+	if loc == nil {
+		return b
+	}
+	val := strings.TrimSpace(header[loc[2]:loc[3]])
+	switch val {
+	case "inherit", "flash_lite", "flash", "pro":
+		return b // already valid in agy
+	}
+	mapped := "inherit"
+	switch strings.ToLower(val) {
+	case "sonnet", "opus", "claude-sonnet-4-6", "claude-opus-4-6-thinking":
+		mapped = "pro"
+	case "haiku":
+		mapped = "flash"
+	default:
+		mapped = "inherit"
+	}
+	newHeader := header[:loc[0]] + "model: " + mapped + header[loc[1]:]
+	prefix := s[:len(s)-len(trimmed)] + "---"
+	suffix := rest[idx:]
+	return []byte(prefix + newHeader + suffix)
+}
+
 // ensureAgyAgentAvailable ensures that an agent defined in ~/.claude/agents/<name>.md
-// is also available in ~/.gemini/config/agents/<name>.md for agy.
+// is also available and compatible in ~/.gemini/config/agents/<name>.md for agy.
 func ensureAgyAgentAvailable(name string) {
 	h, err := os.UserHomeDir()
 	if err != nil {
 		return
 	}
 	geminiAgent := filepath.Join(h, ".gemini", "config", "agents", name+".md")
-	if _, err := os.Stat(geminiAgent); err == nil {
-		return // already present
-	}
 	claudeAgent := filepath.Join(h, ".claude", "agents", name+".md")
-	b, err := os.ReadFile(claudeAgent)
-	if err != nil {
+
+	var b []byte
+	if cb, err := os.ReadFile(claudeAgent); err == nil {
+		b = cb
+	} else if gb, err := os.ReadFile(geminiAgent); err == nil {
+		b = gb
+	} else {
+		return
+	}
+
+	sanitized := sanitizeAgyAgentContent(b)
+	if existing, err := os.ReadFile(geminiAgent); err == nil && string(existing) == string(sanitized) {
 		return
 	}
 	_ = os.MkdirAll(filepath.Dir(geminiAgent), 0o755)
-	_ = os.WriteFile(geminiAgent, b, 0o644)
+	_ = os.WriteFile(geminiAgent, sanitized, 0o644)
 }
 
 // Launch starts `agy --print ...` as a detached OS process, writing its output to
@@ -140,25 +208,6 @@ func DetectConversationID(pid int) string {
 						return m
 					}
 				}
-			}
-		}
-	}
-	// Fallback: check ~/.gemini/antigravity-cli/presence for recent locks
-	if h, err := os.UserHomeDir(); err == nil {
-		presenceDir := filepath.Join(h, ".gemini", "antigravity-cli", "presence")
-		if files, err := os.ReadDir(presenceDir); err == nil {
-			var newest string
-			var newestTime time.Time
-			for _, f := range files {
-				if strings.HasSuffix(f.Name(), ".lock") {
-					if info, err := f.Info(); err == nil && info.ModTime().After(newestTime) {
-						newestTime = info.ModTime()
-						newest = strings.TrimSuffix(f.Name(), ".lock")
-					}
-				}
-			}
-			if time.Since(newestTime) < 10*time.Second {
-				return newest
 			}
 		}
 	}
@@ -345,7 +394,7 @@ func Resume(ctx context.Context, conveyorHome, cwd, bgID, conversationID, settin
 		args = append(args, "--dangerously-skip-permissions")
 	}
 	if s.Model != "" {
-		args = append(args, "--model", s.Model)
+		args = append(args, "--model", sanitizeAgyModel(s.Model))
 	}
 	if s.Agent != "" {
 		ensureAgyAgentAvailable(s.Agent)

@@ -427,6 +427,8 @@ func (s *Service) SetSetting(k, v string) error {
 }
 
 // SetTaskRunner sets (or with "" clears) the task's runner override.
+// When the runner changes, existing session IDs on the task are cleared so that
+// subsequent runs start a fresh session with the new runner backend.
 func (s *Service) SetTaskRunner(key, runnerName string) error {
 	if err := runner.ValidateRunner(runnerName); err != nil {
 		return err
@@ -435,9 +437,19 @@ func (s *Service) SetTaskRunner(key, runnerName string) error {
 	if err != nil {
 		return err
 	}
-	t.Runner = optional(runnerName)
-	if err := store.UpdateTask(s.DB, t); err != nil {
-		return err
+	oldRunner := ""
+	if t.Runner != nil {
+		oldRunner = *t.Runner
+	}
+	newRunner := strings.TrimSpace(runnerName)
+	if oldRunner != newRunner {
+		t.Runner = optional(newRunner)
+		if err := store.UpdateTask(s.DB, t); err != nil {
+			return err
+		}
+		if err := store.ClearTaskSessionIDs(s.DB, t.ID); err != nil {
+			return err
+		}
 	}
 	if runnerName == "agy" || (runnerName == "" && s.RunnerForTask(t).Name() == "agy") {
 		var roots []string

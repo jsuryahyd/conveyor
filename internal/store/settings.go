@@ -36,6 +36,8 @@ var Defaults = map[string]string{
 	"max_consecutive_failures": "3",
 	"default_model":            "",
 	"default_runner":           "claude", // "claude" or "agy"
+	"models_claude":            "",
+	"models_agy":               "",
 	"terminal_template":        DefaultTerminalTemplate(),
 	"brief_extra_rules":        "",
 	"prompt_fresh":             "",

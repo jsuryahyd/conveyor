@@ -9,6 +9,22 @@ import (
 	"testing"
 )
 
+func TestDetectConversationID_NoForeignAdoption(t *testing.T) {
+	// Point HOME to a temp directory with a presence lock file
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	presenceDir := filepath.Join(fakeHome, ".gemini", "antigravity-cli", "presence")
+	_ = os.MkdirAll(presenceDir, 0o755)
+	foreignLock := filepath.Join(presenceDir, "11111111-2222-3333-4444-555555555555.lock")
+	_ = os.WriteFile(foreignLock, nil, 0o644)
+
+	// A non-existent or immediately failed PID must NOT adopt the foreign lockfile
+	got := DetectConversationID(99999999)
+	if got != "" {
+		t.Fatalf("expected empty conversation ID for dead PID, but got adopted foreign ID %q", got)
+	}
+}
+
 func TestExtractConversationID(t *testing.T) {
 	out := `Some header
 Conversation ID: 12345678-1234-1234-1234-123456789abc
@@ -114,5 +130,51 @@ func TestMockLaunch(t *testing.T) {
 	}
 	if pid == "" {
 		t.Fatal("expected non-empty pid")
+	}
+}
+
+func TestSanitizeAgyModel(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{"sonnet", "claude-sonnet-4-6"},
+		{"claude-sonnet-5-5", "claude-sonnet-4-6"},
+		{"opus", "claude-opus-4-6-thinking"},
+		{"claude-opus-5-5", "claude-opus-4-6-thinking"},
+		{"haiku", "gemini-3.8-flash-medium"},
+		{"flash", "gemini-3.8-flash-medium"},
+		{"gemini-3.8-flash-high", "gemini-3.8-flash-high"},
+		{"", ""},
+	} {
+		if got := sanitizeAgyModel(tc.in); got != tc.want {
+			t.Errorf("sanitizeAgyModel(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestSanitizeAgyAgentContent(t *testing.T) {
+	inSonnet := []byte("---\nname: my-agent\nmodel: sonnet\n---\nPrompt text here\n")
+	gotSonnet := string(sanitizeAgyAgentContent(inSonnet))
+	if !strings.Contains(gotSonnet, "model: pro") {
+		t.Errorf("expected model: pro in %q", gotSonnet)
+	}
+
+	inHaiku := []byte("---\nname: my-agent\nmodel: haiku\n---\nPrompt text here\n")
+	gotHaiku := string(sanitizeAgyAgentContent(inHaiku))
+	if !strings.Contains(gotHaiku, "model: flash") {
+		t.Errorf("expected model: flash in %q", gotHaiku)
+	}
+
+	inInherit := []byte("---\nname: my-agent\nmodel: inherit\n---\nPrompt text here\n")
+	gotInherit := string(sanitizeAgyAgentContent(inInherit))
+	if string(inInherit) != gotInherit {
+		t.Errorf("expected unchanged inherit, got %q", gotInherit)
+	}
+
+	inInvalid := []byte("---\nname: my-agent\nmodel: custom-xyz\n---\nPrompt text here\n")
+	gotInvalid := string(sanitizeAgyAgentContent(inInvalid))
+	if !strings.Contains(gotInvalid, "model: inherit") {
+		t.Errorf("expected model: inherit in %q", gotInvalid)
 	}
 }
