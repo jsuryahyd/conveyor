@@ -27,7 +27,7 @@ next: what remains
 criteria:
 - [x] AC1 - evidence
 - [ ] AC2 - why not
-learning: only if this repo had a trap that cost you >10 min and is not in CLAUDE.md/SKILL.md/LEARNINGS.md. Name the file or command. Omit the line otherwise. (repeatable line)
+learning: only if this repo had a trap that cost you >10 min and is not in CLAUDE.md/AGENTS.md/SKILL.md/LEARNINGS.md. Name the file or command. Omit the line otherwise. (repeatable line)
 spawn: [todo] child task title | description with everything its agent needs (repeatable line; [todo] is optional: the child starts once unblocked, else it waits in backlog)
 </conveyor>
 ` + "```" + `
@@ -137,8 +137,9 @@ func Render(db *sql.DB, home string, task store.Task) (string, error) {
 	return path, nil
 }
 
-// writeLearnings writes <ws>/CLAUDE.md from each task repo's LEARNINGS.md, or removes it when there are none.
-// The workspace folder is an ancestor of the session's cwd, so Claude Code loads it without being told to.
+// writeLearnings writes <ws>/CLAUDE.md and <ws>/AGENTS.md from each task repo's LEARNINGS.md,
+// or removes them when there are none. The workspace folder is an ancestor of the session's cwd,
+// so Claude Code loads CLAUDE.md and Antigravity loads AGENTS.md without being told to.
 func writeLearnings(home string, task store.Task) error {
 	var b strings.Builder
 	for _, r := range task.Repos {
@@ -146,15 +147,20 @@ func writeLearnings(home string, task store.Task) error {
 			fmt.Fprintf(&b, "# %s learnings\n\n%s\n\n", r.RepoName, strings.TrimSpace(string(l)))
 		}
 	}
-	path := filepath.Join(workspace.Dir(home, task.Key), "CLAUDE.md")
+	claudePath := filepath.Join(workspace.Dir(home, task.Key), "CLAUDE.md")
+	agentsPath := filepath.Join(workspace.Dir(home, task.Key), "AGENTS.md")
 	if b.Len() == 0 {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("remove learnings: %w", err)
+		for _, p := range []string{claudePath, agentsPath} {
+			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("remove learnings: %w", err)
+			}
 		}
 		return nil
 	}
-	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
-		return fmt.Errorf("write learnings: %w", err)
+	for _, p := range []string{claudePath, agentsPath} {
+		if err := os.WriteFile(p, []byte(b.String()), 0o644); err != nil {
+			return fmt.Errorf("write learnings: %w", err)
+		}
 	}
 	return nil
 }

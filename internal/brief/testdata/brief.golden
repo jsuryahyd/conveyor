@@ -67,7 +67,7 @@ next: what remains
 criteria:
 - [x] AC1 - evidence
 - [ ] AC2 - why not
-learning: only if this repo had a trap that cost you >10 min and is not in CLAUDE.md/SKILL.md/LEARNINGS.md. Name the file or command. Omit the line otherwise. (repeatable line)
+learning: only if this repo had a trap that cost you >10 min and is not in CLAUDE.md/AGENTS.md/SKILL.md/LEARNINGS.md. Name the file or command. Omit the line otherwise. (repeatable line)
 spawn: [todo] child task title | description with everything its agent needs (repeatable line; [todo] is optional: the child starts once unblocked, else it waits in backlog)
 </conveyor>
 ```
