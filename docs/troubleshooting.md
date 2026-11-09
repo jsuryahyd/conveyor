@@ -128,3 +128,40 @@ grep -c "claude CLI not found" ~/.conveyor/logs/dispatcher.log
 **Fix.** Quit Conveyor and relaunch it from a terminal so it inherits your PATH: `/Applications/Conveyor.app/Contents/MacOS/Conveyor`. Then re-queue the failed tasks with `conveyor task move KEY todo`.
 
 **Prevented since this change.** `Startup` runs `$SHELL -ilc` and adds the login shell's PATH entries when `claude` is not on PATH (`internal/ui/shellenv.go`). If it still fails, check that `claude` is found in a fresh login shell (`zsh -ilc 'which claude'`).
+
+## Dispatcher logs repeatedly spam "the gh webhook extension is missing"
+
+Seen in dispatcher logs (over 1,000 occurrences). Conveyor periodically checks for PR review webhooks using `gh webhook forward`. If the `gh-webhook` extension is not installed in the GitHub CLI (`gh`), every poll invocation logs an exit status 1 error.
+
+**Confirm**
+
+```sh
+grep -c "the gh webhook extension is missing" ~/.conveyor/logs/dispatcher.log
+```
+
+**Fix.** Install the webhook extension using `gh`:
+
+```sh
+gh extension install github/gh-webhook
+```
+
+## An Antigravity (agy) session exits immediately with invalid model selection or unknown agent
+
+Seen on CV-3 run 44, CV-5 run 35, and CV-9 run 40. A task set to run with the `agy` runner either inherited a Claude model alias (e.g. `sonnet`) that Antigravity rejected at startup (`error: invalid model selection`), or specified an unknown agent persona (`error: unknown agent "senior-backend-engineer"`). The process exited immediately, and after `reapGrace` (30s) the dispatcher reaped the run and moved the task to `needs_you`.
+
+**Confirm**
+
+```sh
+conveyor task show KEY --runs --json     # last run duration ~30s, block_status null
+cat ~/.conveyor/agy-logs/KEY.log         # shows "error: invalid model selection" or "error: unknown agent"
+```
+
+**Fix.** Set a model and agent valid for Antigravity:
+
+```sh
+conveyor task set KEY --model gemini-3.8-flash-medium
+conveyor task set KEY --agent ""
+conveyor task move KEY todo
+```
+
+**Prevented since CV-10.** Dynamic model catalogs now detect Antigravity models (`agy models`), `internal/agy/agy.go` sanitizes legacy Claude aliases on launch, and agent frontmatter models are converted when synced to `~/.gemini/config/agents/`.

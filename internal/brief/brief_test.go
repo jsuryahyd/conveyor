@@ -78,22 +78,32 @@ func TestRenderGolden(t *testing.T) {
 		t.Errorf("brief differs from %s (run with -update):\n%s", golden, got)
 	}
 
-	// Repo learnings land in the workspace CLAUDE.md, which goes away when they do.
-	ws := filepath.Join(dir, "workspaces", "CV-1A", "CLAUDE.md")
-	if _, err := os.Stat(ws); !os.IsNotExist(err) {
+	// Repo learnings land in the workspace CLAUDE.md and AGENTS.md, which go away when they do.
+	wsClaude := filepath.Join(dir, "workspaces", "CV-1A", "CLAUDE.md")
+	wsAgents := filepath.Join(dir, "workspaces", "CV-1A", "AGENTS.md")
+	if _, err := os.Stat(wsClaude); !os.IsNotExist(err) {
 		t.Fatalf("CLAUDE.md without learnings: %v", err)
+	}
+	if _, err := os.Stat(wsAgents); !os.IsNotExist(err) {
+		t.Fatalf("AGENTS.md without learnings: %v", err)
 	}
 	lf := workspace.LearningsFile(dir, "api")
 	os.MkdirAll(filepath.Dir(lf), 0o755)
 	os.WriteFile(lf, []byte("- use make test\n"), 0o644)
 	Render(db, dir, tk)
-	if b, _ := os.ReadFile(ws); string(b) != "# api learnings\n\n- use make test\n\n" {
+	if b, _ := os.ReadFile(wsClaude); string(b) != "# api learnings\n\n- use make test\n\n" {
 		t.Fatalf("CLAUDE.md %q", b)
+	}
+	if b, _ := os.ReadFile(wsAgents); string(b) != "# api learnings\n\n- use make test\n\n" {
+		t.Fatalf("AGENTS.md %q", b)
 	}
 	os.WriteFile(lf, nil, 0o644)
 	Render(db, dir, tk)
-	if _, err := os.Stat(ws); !os.IsNotExist(err) {
+	if _, err := os.Stat(wsClaude); !os.IsNotExist(err) {
 		t.Fatalf("stale CLAUDE.md: %v", err)
+	}
+	if _, err := os.Stat(wsAgents); !os.IsNotExist(err) {
+		t.Fatalf("stale AGENTS.md: %v", err)
 	}
 }
 
