@@ -6,10 +6,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/JayaSuryaOolio/conveyor/internal/agy"
 	"github.com/JayaSuryaOolio/conveyor/internal/core"
 	"github.com/JayaSuryaOolio/conveyor/internal/gh"
 	"github.com/JayaSuryaOolio/conveyor/internal/statusblock"
@@ -114,6 +117,12 @@ func Handle(db *sql.DB, home, event string, raw []byte) (string, error) {
 	if event == "UserPromptSubmit" {
 		return "", onPrompt(db, task, run)
 	}
+	if p.LastAssistantMessage == "" && run.Runner == "agy" {
+		logPath := filepath.Join(home, "agy-logs", task.Key+".log")
+		if b, err := os.ReadFile(logPath); err == nil {
+			p.LastAssistantMessage = agy.LastTurnOutput(string(b))
+		}
+	}
 	// Before onStop: its status change fires the chat DM, which reads pr_url for the Open PR button.
 	prErr := refreshPR(db, task.ID)
 	if prErr != nil { // best effort
@@ -167,6 +176,16 @@ func resolveRun(db *sql.DB, task store.Task, session string) (store.Run, error) 
 			r.SessionID, r.Status = sp, "running" // running now, so onPrompt does not audit the start again
 			auditStart(task.ID, r)
 			return r, store.UpdateRun(db, r)
+		}
+	}
+	// If this task has an active agy auto run, the hook belongs to it (DetectConversationID may have picked a different id).
+	for i := len(runs) - 1; i >= 0; i-- {
+		if r := runs[i]; (r.Status == "running" || r.Status == "launching") && r.Runner == "agy" && r.Kind == "auto" {
+			if session != "" && (r.SessionID == nil || *r.SessionID != session) {
+				r.SessionID = sp
+				_ = store.UpdateRun(db, r)
+			}
+			return r, nil
 		}
 	}
 	// Only Claude calls hooks, so a run they create is a Claude run.

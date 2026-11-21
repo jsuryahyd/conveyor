@@ -41,6 +41,7 @@ conveyor task label KEY set <prefix>:<value>   # replaces only labels with that 
 conveyor task graph KEY [--json]         # parent tree + links around KEY
 conveyor task new "t" --repo r --epic [--epic-name n]   # epic root: labels epic + epic:<name> (default: lower-cased key)
 conveyor epic status|check|flows|prs|search|sessions|log|audit|approve|restart KEY   # docs/epic-builder.md §13; status/prs take --json
+conveyor detect                         # detect available agent runners (claude, agy) and show active default
 conveyor agent list|add|model         conveyor config list|get|set [--reveal]
 conveyor repo add|list|rm|setup <name> [script|-]
 conveyor models [--json]            # model list (API with ANTHROPIC_API_KEY, else built-in); names are not validated, a bad model fails the session -> needs_you

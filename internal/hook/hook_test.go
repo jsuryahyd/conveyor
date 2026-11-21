@@ -432,3 +432,77 @@ func TestPreToolUseDeniesMergeForEpicMembers(t *testing.T) {
 		}
 	}
 }
+
+func TestStopAgyReadsLogWhenMessageEmpty(t *testing.T) {
+	e := setup(t, store.StatusRunning)
+	sess := "sess-agy"
+	bg := "12345"
+	r, err := store.CreateRun(e.db, store.Run{TaskID: e.task.ID, Kind: "auto", Mode: "fresh", Status: "running", SessionID: &sess, BgID: &bg, Runner: "agy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	logDir := filepath.Join(e.home, "agy-logs")
+	_ = os.MkdirAll(logDir, 0o755)
+	logContent := "Work completed successfully.\n\n<conveyor>\nstatus: done\nsummary: done agy work\nstate: pass\nnext: none\n</conveyor>\n"
+	if err := os.WriteFile(filepath.Join(logDir, e.task.Key+".log"), []byte(logContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := e.fire(t, "Stop", map[string]any{"session_id": sess, "last_assistant_message": ""}); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := store.GetRun(e.db, r.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Status != "finished" {
+		t.Errorf("status = %s, want finished", updated.Status)
+	}
+	if deref(updated.BlockStatus) != "done" {
+		t.Errorf("block_status = %v, want done", deref(updated.BlockStatus))
+	}
+	if deref(updated.Summary) != "done agy work" {
+		t.Errorf("summary = %v, want done agy work", deref(updated.Summary))
+	}
+
+	tk, _ := store.GetTask(e.db, e.task.ID)
+	if tk.Status != store.StatusReview {
+		t.Errorf("task status = %s, want review", tk.Status)
+	}
+}
+
+func TestResolveRunAdoptsAgyAutoRun(t *testing.T) {
+	e := setup(t, store.StatusRunning)
+	oldSess := "stale-detected-sess"
+	bg := "54321"
+	r, err := store.CreateRun(e.db, store.Run{TaskID: e.task.ID, Kind: "auto", Mode: "fresh", Status: "running", SessionID: &oldSess, BgID: &bg, Runner: "agy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	realSess := "real-conv-id"
+	logDir := filepath.Join(e.home, "agy-logs")
+	_ = os.MkdirAll(logDir, 0o755)
+	logContent := "<conveyor>\nstatus: done\nsummary: adopted\nstate: pass\nnext: none\n</conveyor>\n"
+	_ = os.WriteFile(filepath.Join(logDir, e.task.Key+".log"), []byte(logContent), 0o644)
+
+	if err := e.fire(t, "Stop", map[string]any{"conversationId": realSess, "last_assistant_message": ""}); err != nil {
+		t.Fatal(err)
+	}
+
+	runs, err := store.ListRuns(e.db, e.task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) != 1 {
+		t.Fatalf("expected 1 run, got %d", len(runs))
+	}
+	if runs[0].ID != r.ID {
+		t.Errorf("run id = %d, want %d", runs[0].ID, r.ID)
+	}
+	if deref(runs[0].SessionID) != realSess {
+		t.Errorf("session id = %s, want %s", deref(runs[0].SessionID), realSess)
+	}
+}
