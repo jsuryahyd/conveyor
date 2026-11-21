@@ -28,11 +28,12 @@ conveyor task show KEY --thread --runs [--json]
 conveyor task brief KEY --preview     # what the agent is told
 conveyor task log KEY [--follow]      # live session output
 conveyor task sessions KEY [--json]   # Claude session ids (runs + manual)
-conveyor app open NAME KEY            # runs the first action; a quick action (--output) prints its output
-conveyor task new "t" --repo r [--desc ..] [--todo] [--parent KEY] (--repo/--agent optional with --parent: default to the parent's) [--model m] [--agent a]
+conveyor connector open NAME KEY      # runs the first action (app is an alias); a quick action (--output) prints its output
+conveyor task new "t" --repo r [--desc ..] [--todo] [--parent KEY] (--repo/--agent optional with --parent: default to the parent's) [--model m] [--agent a] [--runner r]
 conveyor task comment KEY "text" [--ask|--note]   conveyor task move KEY <status> [--stop]   # --stop: confirm ending running runs (review|done)
 conveyor task stop KEY                # end the running bg session -> needs_you
-conveyor task set KEY [--branch b] [--pr url] [--model m] [--desc d]   # --desc: any status; after a run, a system comment quotes the old one
+conveyor task set KEY [--repo r] [--branch b] [--pr url] [--model m] [--runner r] [--desc d | --desc-file f]   # --desc: any status; after a run, a system comment quotes the old one
+conveyor task decision KEY list|add "what — why"|rm D<n>|dispute D<n> "reason"|undispute D<n>
 conveyor task link KEY blocks|relates OTHER     conveyor task unlink KEY kind OTHER
 conveyor task parent KEY PARENT|--none
 conveyor task repo KEY add|rm NAME   # rm refused once the repo has a PR or is the last one
@@ -43,12 +44,13 @@ conveyor task new "t" --repo r --epic [--epic-name n]   # epic root: labels epic
 conveyor epic status|check|flows|prs|search|sessions|log|audit|approve|restart KEY   # docs/epic-builder.md §13; status/prs take --json
 conveyor agent list|add|model         conveyor config list|get|set [--reveal]
 conveyor repo add|list|rm|setup <name> [script|-]
-conveyor models [--json]            # model list (API with ANTHROPIC_API_KEY, else built-in); names are not validated, a bad model fails the session -> needs_you
+conveyor models [--runner r] [--json] # model list (API with ANTHROPIC_API_KEY, else built-in; agy runner queries agy models)
+conveyor detect [--fix]               # detect available agent runners (claude, agy) and show/configure active default_runner
 conveyor state export [FILE] | import FILE [--repo A=name]   # settings/connectors/automations/user agents, repos as placeholders
 conveyor state backup [--keep N]   # whole DB to <home>/backups via VACUUM INTO, keeps newest N (5); state-backup automation runs it every 6h
-conveyor plugin status|install|uninstall [claude|agy]   # `hooks` is an alias; writes ~/.claude/skills/conveyor/ (hooks + conveyor, epic, conveyor-drift skills), removes the old ~/.claude/skills/epic
+conveyor plugin status|install|uninstall [claude|agy]   # `hooks` is an alias; writes ~/.claude/skills/conveyor/ (hooks + conveyor, epic, conveyor-drift, write-migration skills), removes the old ~/.claude/skills/epic
 conveyor epic review-check KEY [--step N]   # one PR review check: new feedback -> one system comment (requeues); none -> next backoff (30m, 2h, 8h, stop). Scheduled as a one-shot automation (run_at) 10m after a new PR head, or now via the task page button
-conveyor review-webhook [--status|--stop]   # opt-in connector (examples/review-webhooks.json, embedded in package examples): loopback listener + `gh webhook forward` per repo with an open PR; a review event schedules that task's check now. Starts detached (re-execs `--serve`), pid `<home>/apps/<app-id>.pid`, log `logs/app/<app-id>.log` (`--app`, default `review-webhooks`)
+conveyor review-webhook [--status|--stop]   # opt-in connector (examples/review-webhooks.json, embedded in package examples): loopback listener + `gh webhook forward` per repo with an open PR; a review event schedules that task's check now. Starts detached (re-execs `--serve`), pid `<home>/connectors/<app-id>.pid`, log `logs/app/<app-id>.log` (`--connector`/`--app`, default `review-webhooks`)
 conveyor jira source|sync EPIC ...      # Jira epic source (internal/jira): dispatcher poller (app or daemon) ticks 30s, pulls sources past interval_sec; errors land on the source's last_error
 conveyor daemon                       # dispatcher in the foreground
 ```
@@ -81,7 +83,7 @@ Use a throwaway home for experiments: `conveyor --home $(mktemp -d) ...`. Never 
 | Learnings / automations / Jira | `internal/learning`, `internal/automation`, `internal/jira` |
 | Wails bindings (thin) | `internal/ui/app.go`; app entry `main.go` |
 | Example connectors | `examples/*.json` (embedded, listed under Connectors > Detected, never auto-installed): working manifests to copy when writing a new connector |
-| UI (React + Mantine) | `frontend/src`: `App.tsx` nav, `views.tsx` board/focus popup/task page, `workspace.tsx` task sidebar, `relations.tsx`, `epic.tsx` + `epicLayout.ts` (epic view on @xyflow/react: cards, groups, header strip; layering tested by `node --experimental-strip-types --test frontend/test/epicLayout.test.mjs`; `ListSkills` binding feeds the skills picker), `forms.tsx` dialogs + settings (incl. Repos tab), `agents.tsx`, `automations.tsx`, `apps.tsx`, `logs.tsx`, `terminals.tsx` |
+| UI (React + Mantine) | `frontend/src`: `App.tsx` nav, `views.tsx` board/focus popup/task page, `workspace.tsx` task sidebar, `relations.tsx`, `epic.tsx` + `epicLayout.ts` (epic view on @xyflow/react: cards, groups, header strip; layering tested by `node --experimental-strip-types --test frontend/test/epicLayout.test.mjs`; `ListSkills` binding feeds the skills picker), `forms.tsx` dialogs + settings (incl. Repos tab), `agents.tsx`, `automations.tsx`, `connectors.tsx`, `logs.tsx`, `terminals.tsx` |
 
 ## Testing in the repo root (graft)
 
@@ -122,6 +124,6 @@ Known failure modes with confirm/fix steps: `docs/troubleshooting.md` (e.g. a ru
 - Bot review comments (cubic, coderabbit) start with HTML comments and tags; strip them before showing a comment in a toast.
 - Sub-tasks: always set `--desc`/`--desc-file` at creation, or the agent has no context. A `spawn:` line in the status block (`spawn: [todo] title | desc` creates it in todo, else backlog) only gives the sub-task the parent's summary/state/next; when it needs real context use `conveyor task new --parent KEY --desc ...`.
 - Keep every major action reachable from the CLI; the UI calls the same `core.Service`.
-- Manifest `settings` (v3): values live in `connectors.settings` (`store.GetConnectorSettings`), validated in `internal/connectors/manifest.go`; `resolveAction` exposes them as `${{ setting.key }}`.
+- Manifest `settings` (v3): values live in `connectors.settings` (`store.GetConnectorSettings`), validated in `internal/connectors/connectorsettings.go`; `resolveAction` exposes them as `${{ setting.key }}`.
 - Manifest schema changes: bump `core.ManifestVersion` and convert the old shape in `migrateManifest` (installed manifests are stored raw and migrated on every parse).
 - Update `docs/guide.md` (and this file) when behaviour or commands change.
