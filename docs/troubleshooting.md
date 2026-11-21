@@ -164,7 +164,7 @@ cwd, log_path = sys.argv[1], sys.argv[2]
 content = open(log_path, "r", encoding="utf-8").read()
 print(json.dumps({"cwd": cwd, "last_assistant_message": content}))
 EOF
-conveyor task show KEY                   # run updated with summary, task moved to review
+conveyor task show KEY                   # run updated with summary; if task is in needs_you, move as needed (e.g. conveyor task move KEY done)
 ```
 
 **Prevented since CV-16.** Conveyor's `hook.Handle` now reads `~/.conveyor/agy-logs/<KEY>.log` when `LastAssistantMessage` is empty on an `agy` session, and `resolveRun` adopts active `agy` auto runs.
