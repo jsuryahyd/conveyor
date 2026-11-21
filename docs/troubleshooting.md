@@ -141,3 +141,30 @@ grep -c "claude CLI not found" ~/.conveyor/logs/dispatcher.log
 **Fix.** Quit Conveyor and relaunch it from a terminal so it inherits your PATH: `/Applications/Conveyor.app/Contents/MacOS/Conveyor`. Then re-queue the failed tasks with `conveyor task move KEY todo`.
 
 **Prevented since this change.** `Startup` runs `$SHELL -ilc` and adds the login shell's PATH entries when `claude` is not on PATH (`internal/ui/shellenv.go`). If it still fails, check that `claude` is found in a fresh login shell (`zsh -ilc 'which claude'`).
+
+## An Antigravity task finishes in the log but Conveyor marks it "needs_you"
+
+Seen on CV-11A run 66. Antigravity's `Stop` lifecycle hook does not pass `last_assistant_message` on stdin. Conveyor's hook handler parsed an empty message, found no `<conveyor>` status block, set `final_message: ""` and moved the task to `needs_you`, while the full response and status block were present in `~/.conveyor/agy-logs/<KEY>.log`.
+
+**Confirm**
+
+```sh
+conveyor task show KEY --runs --json     # last run: status finished, final_message: "", block_status: null
+grep -c "<conveyor>" ~/.conveyor/agy-logs/KEY.log  # returns > 0
+```
+
+**Fix.** Replay the Stop hook using the session log:
+
+```sh
+KEY=<task key>
+CWD=$(conveyor task show $KEY --json | python3 -c 'import sys, json; repos = json.load(sys.stdin).get("repos", []); print(repos[0]["worktree_path"] if repos else "")')
+python3 - "$CWD" "$HOME/.conveyor/agy-logs/$KEY.log" <<'EOF' | conveyor hook Stop
+import json, sys
+cwd, log_path = sys.argv[1], sys.argv[2]
+content = open(log_path, "r", encoding="utf-8").read()
+print(json.dumps({"cwd": cwd, "last_assistant_message": content}))
+EOF
+conveyor task show KEY                   # run updated with summary; if task is in needs_you, move as needed (e.g. conveyor task move KEY done)
+```
+
+**Prevented since CV-16.** Conveyor's `hook.Handle` now reads `~/.conveyor/agy-logs/<KEY>.log` when `LastAssistantMessage` is empty on an `agy` session, and `resolveRun` adopts active `agy` auto runs.

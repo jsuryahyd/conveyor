@@ -139,12 +139,31 @@ func needsApproach(task store.Task) bool {
 // Protocol is the status-block protocol and the built-in rules (extra rules excluded), for display.
 func Protocol(db *sql.DB) string { return statusBlock + "\n## Rules\n\n" + rules(db, false) }
 
-func firstLine(s string) string {
+func formatComment(s string) string {
 	s = strings.TrimSpace(s)
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		s = s[:i]
+	lines := strings.Split(s, "\n")
+	var cleaned []string
+	for _, l := range lines {
+		l = strings.TrimRight(l, " \t\r")
+		if l != "" || len(cleaned) > 0 {
+			cleaned = append(cleaned, l)
+		}
 	}
-	return s
+	for len(cleaned) > 0 && cleaned[len(cleaned)-1] == "" {
+		cleaned = cleaned[:len(cleaned)-1]
+	}
+	if len(cleaned) == 0 {
+		return ""
+	}
+	if len(cleaned) == 1 {
+		return "- " + cleaned[0]
+	}
+	for i := 1; i < len(cleaned); i++ {
+		if cleaned[i] != "" {
+			cleaned[i] = "  " + cleaned[i]
+		}
+	}
+	return "- " + strings.Join(cleaned, "\n")
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
@@ -396,7 +415,9 @@ func history(b *strings.Builder, h string, runs []store.Run, comments []store.Co
 	var human []string
 	for _, c := range comments {
 		if c.Author == store.AuthorHuman {
-			human = append(human, clip("- "+firstLine(c.Body), maxCommentLine))
+			if f := formatComment(c.Body); f != "" {
+				human = append(human, clip(f, maxCommentLine))
+			}
 		}
 	}
 	if len(human) > maxComments {

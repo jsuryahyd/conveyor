@@ -92,10 +92,23 @@ func doHook(home string, args []string, raw []byte) error {
 
 func logHook(home string, args []string, raw []byte, err error) {
 	var p struct {
-		SessionID string `json:"session_id"`
-		Cwd       string `json:"cwd"`
+		SessionID           string `json:"session_id"`
+		SessionIDCamel      string `json:"sessionId"`
+		ConversationID      string `json:"conversation_id"`
+		ConversationIDCamel string `json:"conversationId"`
+		Cwd                 string `json:"cwd"`
 	}
 	json.Unmarshal(raw, &p) // best effort: a bad payload still gets its line, with the error
+	sess := p.SessionID
+	if sess == "" {
+		sess = p.SessionIDCamel
+	}
+	if sess == "" {
+		sess = p.ConversationID
+	}
+	if sess == "" {
+		sess = p.ConversationIDCamel
+	}
 	key := workspace.KeyFromCwd(home, p.Cwd)
 	if err == nil && key == "" {
 		return // user-level hooks fire for every Claude session; only ours are worth a line
@@ -109,5 +122,5 @@ func logHook(home string, args []string, raw []byte, err error) {
 	if err != nil {
 		res = err.Error()
 	}
-	fmt.Fprintf(f, "%s %s %v session=%s cwd=%s: %s\n", time.Now().UTC().Format(time.RFC3339), key, args, p.SessionID, p.Cwd, res)
+	fmt.Fprintf(f, "%s %s %v session=%s cwd=%s: %s\n", time.Now().UTC().Format(time.RFC3339), key, args, sess, p.Cwd, res)
 }
